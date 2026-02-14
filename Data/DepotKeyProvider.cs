@@ -9,7 +9,7 @@ public class DepotKeyProvider
     private DexLuaApi dexLuaApi;
     private LuaState state = LuaState.Create();
 
-    private Dictionary<uint, string> appKeys = [];
+    private Dictionary<int, string> appKeys = [];
 
     public DepotKeyProvider(DexLuaApi dexLuaApi)
     {
@@ -17,7 +17,7 @@ public class DepotKeyProvider
 
         state.Environment["addappid"] = new LuaFunction((context, ct) =>
         {
-            var depotId = context.GetArgument<uint>(0);
+            var depotId = context.GetArgument<int>(0);
             var depotKey = context.GetArgument<string?>(2);
 
             if (depotKey is null)
@@ -31,7 +31,7 @@ public class DepotKeyProvider
         });
     }
 
-    public async Task<string> GetDepotKeysAsync(uint appId, uint depotId)
+    public async Task<string> GetDepotKeysAsync(uint appId, int depotId)
     {
         if (appKeys.TryGetValue(depotId, out var cached))
             return cached;

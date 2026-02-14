@@ -19,6 +19,8 @@
     </PackageReference>
     <PackageReference Include="LuaCSharp" Version="0.5.3" />
     <PackageReference Include="Microsoft.AspNetCore.WebUtilities" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
     <PackageReference Include="SteamKit2" Version="3.4.0" />
   </ItemGroup>
 </Project>

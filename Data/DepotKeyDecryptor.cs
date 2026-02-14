@@ -2,7 +2,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 
-public class DepotDecryptor
+public class DepotKeyDecryptor
 {
     public static string DecryptFilename(string encryptedFilename, byte[] depotKey)
     {
@@ -26,7 +26,7 @@ public class DepotDecryptor
         return Encoding.UTF8.GetString(decryptedBytes);
     }
 
-    private static byte[] HexStringToBytes(string hex)
+    public static byte[] HexStringToBytes(string hex)
     {
         byte[] bytes = new byte[hex.Length / 2];
         for (int i = 0; i < bytes.Length; i++)

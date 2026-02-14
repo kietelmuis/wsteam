@@ -71,14 +71,15 @@ public class DownloadManager
         {
             if (m is null) return;
 
-            var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, m.Value.Value.DepotID);
+            var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, (int)m.Value.Value.DepotID);
+            var byteDepotKey = DepotKeyDecryptor.HexStringToBytes(depotKey);
 
             if (m is null || m.Value.Value.Files is null) return;
             Console.WriteLine($"downloading manifest {m.Value.Value.ManifestGID}");
 
             m.Value.Value.Files.ForEach(f =>
             {
-                var decryptedFileName = DepotDecryptor.DecryptFilename(f.FileName);
+                var decryptedFileName = DepotKeyDecryptor.DecryptFilename(f.FileName, byteDepotKey);
 
                 using var writer = new FileWriter(Path.Combine(gameDirectory, f.FileName));
                 Console.WriteLine($"[manifest {m.Value.Value.ManifestGID}] downloading file {f.FileName}");
