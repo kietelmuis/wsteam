@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using SteamKit2;
@@ -16,10 +15,14 @@ public class DownloadManager
     private SteamUser steamUser;
     private SteamContent steamContent;
 
-    private Client cdnClient;
+    private ManifestHubApi manifestApi;
+    private SteamCMDApi steamCMDApi;
 
-    public DownloadManager()
+    public DownloadManager(ManifestHubApi manifestApi, SteamCMDApi steamCMDApi)
     {
+        this.manifestApi = manifestApi;
+        this.steamCMDApi = steamCMDApi;
+
         this.steamClient = new SteamClient();
         this.steamUser = this.steamClient.GetHandler<SteamUser>()
             ?? throw new InvalidOperationException("SteamUser handler not found");
@@ -27,29 +30,46 @@ public class DownloadManager
             ?? throw new InvalidOperationException("SteamContent handler not found");
     }
 
-    public async Task DownloadAppAsync(uint appId, DepotData[] depots)
+    public async Task DownloadAppAsync(uint appId)
     {
-        var cdns = await steamContent.GetServersForSteamPipe();
-    }
+        DepotManifest[] manifests = [];
 
-    private async Task DownloadDepotsAsync(DepotData[] depots)
-    {
-        depots.AsParallel().ForAll(async depot =>
+        var game = await steamCMDApi.GetInfoAsync(appId);
+        Console.WriteLine(game.depots.DepotObjects.Count());
+
+        game.depots.DepotObjects.ToList().ForEach(async d =>
         {
-            await DownloadDepotAsync("manifestFile.vdf", depot);
+            if (d.Value.manifests is null) return;
+
+            var depotId = int.Parse(d.Key);
+            var manifestId = ulong.Parse(d.Value.manifests.@public.gid);
+            Console.WriteLine($"depotId: {depotId} manifestId: {manifestId}");
+
+            var manifest = await manifestApi.GetManifestAsync(depotId, manifestId);
+            Console.WriteLine($"received manifest with depotid {manifest.DepotID}");
         });
     }
 
-    private async Task<DepotManifest> DownloadDepotAsync(string manifestFile, Server cdnServer, Client cdnClient)
+    private async Task DownloadDepotsAsync(IEnumerable<DepotData> depots)
     {
-        var manifest = DepotManifest.LoadFromFile(manifestFile)
-            ?? throw new FileNotFoundException($"Manifest file not found: {manifestFile}");
+        depots.AsParallel().ForAll(async depot =>
+        {
+            // await DownloadDepotAsync(depot.DepotId);
+        });
+    }
 
+    private async Task<DepotManifest> DownloadManifestAsync(int depotId)
+    {
+        return null;
+    }
+
+    private async Task DownloadDepotAsync(DepotManifest manifest, Server cdnServer, Client cdnClient)
+    {
         manifest.Files.AsParallel().ForAll(async f => await DownloadDepotChunksAsync(f.Chunks, cdnServer, cdnClient));
     }
 
     private async Task DownloadDepotChunksAsync(List<ChunkData> chunks, Server cdnServer, Client cdnClient)
     {
-        chunks.AsParallel().ForAll(c => cdnClient.DownloadDepotChunkAsync());
+        // chunks.AsParallel().ForAll(c => cdnClient.DownloadDepotChunkAsync());
     }
 }

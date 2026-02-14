@@ -1,6 +1,7 @@
 namespace wsteam.Data;
 
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
@@ -15,10 +16,13 @@ public class SteamCMDApi
         this.httpClient = httpClient;
     }
 
-    public async Task<SteamApp[]> GetInfoAsync(int appId)
+    public async Task<SteamApp> GetInfoAsync(uint appId)
     {
         var response = await httpClient.GetAsync($"https://api.steamcmd.net/v1/info/{appId}");
-        return await response.Content.ReadFromJsonAsync<SteamApp[]>()
+
+        var deserializedResponse = await response.Content.ReadFromJsonAsync<SteamInfo>()
             ?? throw new Exception("Failed to retrieve Steam app information");
+
+        return deserializedResponse.data.First().Value;
     }
 }
