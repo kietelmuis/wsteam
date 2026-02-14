@@ -49,7 +49,8 @@ public class ManifestHubApi
                 var response = await httpClient.GetAsync(url);
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"Failed to get manifest for depot {depotId}, retrying");
+                    var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>();
+                    Console.WriteLine($"ManifestHub error: {jsonResponse.GetProperty("error")}");
 
                     await Task.Delay(1000);
                     continue;

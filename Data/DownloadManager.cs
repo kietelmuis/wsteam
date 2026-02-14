@@ -81,33 +81,44 @@ public class DownloadManager
 
     private async Task DownloadManifestsAsync(Dictionary<uint, DepotManifest> manifestFiles, string gameDirectory, uint appId, Client cdnClient, Server cdnServer)
     {
-        await Parallel.ForEachAsync(manifestFiles, async (m, ct) =>
+        foreach (var (depotId, manifest) in manifestFiles)
         {
-            var depotId = m.Key;
-            var manifest = m.Value;
-
             var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
-            if (depotKey is null) return;
+            if (depotKey is null) continue;
 
             manifest.DecryptFilenames(depotKey);
-            if (manifest.Files is null) return;
+            if (manifest.Files is null) continue;
 
             Console.WriteLine($"[app {appId}] downloading manifest {manifest.ManifestGID}");
 
-            await Parallel.ForEachAsync(manifest.Files, async (file, ct) =>
-                await DownloadFileAsync(file, appId, gameDirectory, cdnClient, cdnServer));
-        });
+            await Parallel.ForEachAsync(
+                manifest.Files,
+                new ParallelOptions { MaxDegreeOfParallelism = 4 },
+                async (file, ct) => await DownloadFileAsync(file, appId, gameDirectory, cdnClient, cdnServer));
+        }
     }
 
     private async Task DownloadFileAsync(DepotManifest.FileData file, uint depotId, string gameDirectory, Client cdnClient, Server cdnServer)
     {
         var fileName = Path.GetFileName(file.FileName);
+        var filePath = Path.Combine(gameDirectory, file.FileName);
 
-        using var writer = new FileWriter(Path.Combine(gameDirectory, file.FileName));
         Console.WriteLine($"[depot {depotId}] downloading file {fileName}, {file.Chunks.Count()} chunks");
 
-        await Parallel.ForEachAsync(file.Chunks, async (chunk, ct) =>
-            await DownloadChunkAsync(chunk, depotId, writer, cdnClient, cdnServer));
+        using var writer = new FileWriter(filePath);
+
+        try
+        {
+            await Parallel.ForEachAsync(file.Chunks, async (chunk, ct) =>
+                await DownloadChunkAsync(chunk, depotId, writer, cdnClient, cdnServer));
+
+            writer.Flush();
+        }
+        catch
+        {
+            File.Delete(filePath);
+            throw;
+        }
     }
 
     private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, FileWriter writer, Client cdnClient, Server cdnServer)
@@ -121,6 +132,5 @@ public class DownloadManager
         Console.WriteLine($"[chunk {chunkId}] downloaded {bytes}b");
 
         await writer.WriteChunkAsync(chunk, buffer);
-        await writer.FlushAsync();
     }
 }
