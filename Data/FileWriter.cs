@@ -3,9 +3,18 @@ using System.IO;
 using System.Threading.Tasks;
 using SteamKit2;
 
-public class FileWriter(string fileDirectory) : IDisposable
+public class FileWriter : IDisposable
 {
-    private readonly FileStream file = File.Create(fileDirectory);
+    private readonly FileStream file;
+
+    public FileWriter(string fileDirectory)
+    {
+        var directory = Path.GetDirectoryName(fileDirectory)
+            ?? throw new DirectoryNotFoundException("Invalid fileDirectory");
+        Directory.CreateDirectory(directory);
+
+        file = File.Create(fileDirectory);
+    }
 
     public async Task WriteChunkAsync(DepotManifest.ChunkData chunk, byte[] data)
     {

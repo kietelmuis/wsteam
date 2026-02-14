@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using SteamKit2;
@@ -39,8 +40,10 @@ public class DownloadManager
     public async Task DownloadAppAsync(uint appId, string path)
     {
         var game = await steamCMDApi.GetInfoAsync(appId);
+        var depots = game.depots.DepotObjects.ToList();
+
         Console.WriteLine($"downloading {game.config.installdir}");
-        Console.WriteLine($"found {game.depots.DepotObjects.Count()} manifests");
+        Console.WriteLine($"found {depots.Count()} depots");
 
         var gameDirectory = Path.Combine(path, game.config.installdir);
         Directory.CreateDirectory(gameDirectory);
@@ -51,8 +54,7 @@ public class DownloadManager
 
         using var cdnClient = new Client(steamClient);
 
-        var depots = game.depots.DepotObjects.ToList();
-        Console.WriteLine("");
+        Console.WriteLine($"connecting to cdn {cdnServer.Host}");
 
         var manifestTasks = depots.Select(async d =>
         {
@@ -63,44 +65,59 @@ public class DownloadManager
             return new KeyValuePair<uint, DepotManifest>(depotId, manifest);
         });
 
-        var manifests = (await Task.WhenAll(manifestTasks))
-            .Where(m => m is not null)
-            .Cast<KeyValuePair<uint, DepotManifest>?>()
-            .ToList();
+        var manifestResults = await Task.WhenAll(manifestTasks);
+        var manifests = manifestResults
+            .Where(m => m.HasValue)
+            .Select(m => m!.Value)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
 
-        manifests.ForEach(async m =>
+        Console.WriteLine($"downloading {manifests.Count()} manifests from {cdnServer.Host}");
+        await DownloadManifestsAsync(manifests, gameDirectory, appId, cdnClient, cdnServer);
+    }
+
+    private async Task DownloadManifestsAsync(Dictionary<uint, DepotManifest> manifests, string gameDirectory, uint appId, Client cdnClient, Server cdnServer)
+    {
+        manifests.ToList().ForEach(async m =>
         {
-            if (m is null) return;
+            var depotId = m.Key;
+            var manifest = m.Value;
 
-            var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, (int)m.Value.Value.DepotID);
+            var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
             if (depotKey is null) return;
 
-            m.Value.Value.DecryptFilenames(depotKey);
+            manifest.DecryptFilenames(depotKey);
 
-            if (m is null || m.Value.Value.Files is null) return;
-            Console.WriteLine($"downloading manifest {m.Value.Value.ManifestGID}");
+            if (manifest.Files is null) return;
+            Console.WriteLine($"[app {appId}] downloading manifest {manifest.ManifestGID}");
 
-            m.Value.Value.Files.ForEach(f =>
-            {
-                using var writer = new FileWriter(Path.Combine(gameDirectory, f.FileName));
-                Console.WriteLine($"[manifest {m.Value.Value.ManifestGID}] downloading file {f.FileName}");
-
-                f.Chunks.ForEach(async c =>
-                {
-                    Console.WriteLine($"[file {f.FileName}] downloading chunk {c.ChunkID}");
-
-                    var length = checked((int)c.UncompressedLength);
-                    byte[] buffer = new byte[length];
-
-                    var bytes = await cdnClient.DownloadDepotChunkAsync(m.Value.Key, c, cdnServer, buffer);
-                    Console.WriteLine($"[chunk {c.ChunkID}] downloaded {bytes}b");
-
-                    await writer.WriteChunkAsync(c, buffer);
-                    await writer.FlushAsync();
-                });
-
-            });
+            manifest.Files.ForEach(async file =>
+                await DownloadFileAsync(file, appId, gameDirectory, cdnClient, cdnServer));
         });
+    }
+
+    private async Task DownloadFileAsync(DepotManifest.FileData file, uint depotId, string gameDirectory, Client cdnClient, Server cdnServer)
+    {
+        var fileName = Path.GetFileName(file.FileName);
+
+        using var writer = new FileWriter(Path.Combine(gameDirectory, file.FileName));
+        Console.WriteLine($"[depot {depotId}] downloading file {fileName}, {file.Chunks.Count()} chunks");
+
+        file.Chunks.ForEach(async chunk =>
+            await DownloadChunkAsync(chunk, depotId, writer, cdnClient, cdnServer));
+    }
+
+    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, FileWriter writer, Client cdnClient, Server cdnServer)
+    {
+        var chunkId = Convert.ToHexStringLower(SHA256.HashData(chunk.ChunkID ?? []));
+
+        var length = checked((int)chunk.UncompressedLength);
+        byte[] buffer = new byte[length];
+
+        var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer);
+        Console.WriteLine($"[chunk {chunkId}] downloaded {bytes}b");
+
+        await writer.WriteChunkAsync(chunk, buffer);
+        await writer.FlushAsync();
     }
 
     private async Task<DepotManifest?> DownloadManifestAsync(SteamDepot depot, uint depotId)

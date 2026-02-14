@@ -9,7 +9,7 @@ public class DepotKeyProvider
     private DexLuaApi dexLuaApi;
     private LuaState state = LuaState.Create();
 
-    private Dictionary<int, byte[]> depotKeys = [];
+    private Dictionary<uint, byte[]> depotKeys = [];
 
     public DepotKeyProvider(DexLuaApi dexLuaApi)
     {
@@ -21,18 +21,14 @@ public class DepotKeyProvider
             var depotKey = context.HasArgument(2)
                 ? context.GetArgument<string>(2) : null;
 
-            if (depotKey is null)
-            {
-                Console.WriteLine($"[lua] no depotKey found for depot {depotId}");
-                return new(0);
-            }
+            if (depotKey is null) return new(0);
 
-            depotKeys[depotId] = Convert.FromHexString(depotKey);
+            depotKeys[(uint)depotId] = Convert.FromHexString(depotKey);
             return new(0);
         });
     }
 
-    public async Task<byte[]?> GetDepotKeysAsync(uint appId, int depotId)
+    public async Task<byte[]?> GetDepotKeysAsync(uint appId, uint depotId)
     {
         if (depotKeys.TryGetValue(depotId, out var cached))
             return cached;
@@ -40,7 +36,11 @@ public class DepotKeyProvider
         var lua = await dexLuaApi.DownloadLuaAsync(appId);
         await state.DoStringAsync(lua);
 
-        if (!depotKeys.TryGetValue(depotId, out var depotKey)) return null;
+        if (!depotKeys.TryGetValue(depotId, out var depotKey))
+        {
+            Console.WriteLine($"[provider] could not get depotKey for depot {depotId}");
+            return null;
+        }
 
         return depotKey;
     }

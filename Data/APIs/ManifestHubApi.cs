@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.WebUtilities;
 using SteamKit2;
@@ -14,6 +15,8 @@ public class ManifestHubApi
     private HttpClient httpClient;
     private readonly string apiKey;
     private const int maxRetries = 5;
+
+    private SemaphoreSlim semaphoreSlim = new SemaphoreSlim(1);
 
     public ManifestHubApi(HttpClient httpClient)
     {
@@ -25,28 +28,44 @@ public class ManifestHubApi
 
     public async Task<DepotManifest?> GetManifestAsync(uint depotId, ulong manifestId)
     {
-        var query = new Dictionary<string, string?>
+        await semaphoreSlim.WaitAsync();
+
+        try
         {
-            ["apikey"] = apiKey,
-            ["depotid"] = depotId.ToString(),
-            ["manifestid"] = manifestId.ToString(),
-        };
+            var query = new Dictionary<string, string?>
+            {
+                ["apikey"] = apiKey,
+                ["depotid"] = depotId.ToString(),
+                ["manifestid"] = manifestId.ToString(),
+            };
 
-        var url = QueryHelpers.AddQueryString(
-            "https://api.manifesthub1.filegear-sg.me/manifest",
-            query
-        );
+            var url = QueryHelpers.AddQueryString(
+                "https://api.manifesthub1.filegear-sg.me/manifest",
+                query
+            );
 
-        for (int attempt = 0; attempt < maxRetries; attempt++)
-        {
-            var response = await httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode) continue;
+            for (int attempt = 0; attempt < maxRetries; attempt++)
+            {
+                var response = await httpClient.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Console.WriteLine($"Failed to get manifest for depot {depotId}, retrying");
 
-            using var stream = await response.Content.ReadAsStreamAsync();
-            return DepotManifest.Deserialize(stream);
+                    await Task.Delay(1000);
+                    continue;
+                }
+
+                using var stream = await response.Content.ReadAsStreamAsync();
+                return DepotManifest.Deserialize(stream);
+            }
+
+            Console.WriteLine(url);
+            Console.WriteLine($"failed to download depot {depotId} after {maxRetries} tries");
+            return null;
         }
-
-        Console.WriteLine($"failed to download depot {depotId} after {maxRetries} tries");
-        return null;
+        finally
+        {
+            semaphoreSlim.Release();
+        }
     }
 }
