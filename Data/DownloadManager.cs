@@ -56,28 +56,32 @@ public class DownloadManager
 
         Console.WriteLine($"connecting to cdn {cdnServer.Host}");
 
-        var manifestTasks = depots.Select(async d =>
+        var manifestDownloadTasks = depots.Select(async depot =>
         {
-            var depotId = uint.Parse(d.Key);
-            var manifest = await DownloadManifestAsync(d.Value, depotId);
+            if (depot.Value.manifests is null) return null;
+
+            var depotId = uint.Parse(depot.Key);
+            var manifestId = ulong.Parse(depot.Value.manifests.@public.gid);
+
+            var manifest = await manifestApi.GetManifestAsync(depotId, manifestId);
             if (manifest is null) return (KeyValuePair<uint, DepotManifest>?)null;
 
             return new KeyValuePair<uint, DepotManifest>(depotId, manifest);
         });
 
-        var manifestResults = await Task.WhenAll(manifestTasks);
-        var manifests = manifestResults
+        var manifestFileResults = await Task.WhenAll(manifestDownloadTasks);
+        var manifestFiles = manifestFileResults
             .Where(m => m.HasValue)
             .Select(m => m!.Value)
             .ToDictionary(kv => kv.Key, kv => kv.Value);
 
-        Console.WriteLine($"downloading {manifests.Count()} manifests from {cdnServer.Host}");
-        await DownloadManifestsAsync(manifests, gameDirectory, appId, cdnClient, cdnServer);
+        Console.WriteLine($"downloading {manifestFiles.Count()} manifests from {cdnServer.Host}");
+        await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServer);
     }
 
-    private async Task DownloadManifestsAsync(Dictionary<uint, DepotManifest> manifests, string gameDirectory, uint appId, Client cdnClient, Server cdnServer)
+    private async Task DownloadManifestsAsync(Dictionary<uint, DepotManifest> manifestFiles, string gameDirectory, uint appId, Client cdnClient, Server cdnServer)
     {
-        manifests.ToList().ForEach(async m =>
+        await Parallel.ForEachAsync(manifestFiles, async (m, ct) =>
         {
             var depotId = m.Key;
             var manifest = m.Value;
@@ -86,11 +90,11 @@ public class DownloadManager
             if (depotKey is null) return;
 
             manifest.DecryptFilenames(depotKey);
-
             if (manifest.Files is null) return;
+
             Console.WriteLine($"[app {appId}] downloading manifest {manifest.ManifestGID}");
 
-            manifest.Files.ForEach(async file =>
+            await Parallel.ForEachAsync(manifest.Files, async (file, ct) =>
                 await DownloadFileAsync(file, appId, gameDirectory, cdnClient, cdnServer));
         });
     }
@@ -102,7 +106,7 @@ public class DownloadManager
         using var writer = new FileWriter(Path.Combine(gameDirectory, file.FileName));
         Console.WriteLine($"[depot {depotId}] downloading file {fileName}, {file.Chunks.Count()} chunks");
 
-        file.Chunks.ForEach(async chunk =>
+        await Parallel.ForEachAsync(file.Chunks, async (chunk, ct) =>
             await DownloadChunkAsync(chunk, depotId, writer, cdnClient, cdnServer));
     }
 
@@ -118,12 +122,5 @@ public class DownloadManager
 
         await writer.WriteChunkAsync(chunk, buffer);
         await writer.FlushAsync();
-    }
-
-    private async Task<DepotManifest?> DownloadManifestAsync(SteamDepot depot, uint depotId)
-    {
-        if (depot.manifests is null) return null;
-
-        return await manifestApi.GetManifestAsync(depotId, ulong.Parse(depot.manifests.@public.gid));
     }
 }
