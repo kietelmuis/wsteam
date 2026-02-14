@@ -18,7 +18,8 @@ public class DepotKeyProvider
         state.Environment["addappid"] = new LuaFunction((context, ct) =>
         {
             var depotId = context.GetArgument<int>(0);
-            var depotKey = context.GetArgument<string?>(2);
+            var depotKey = context.HasArgument(2)
+                ? context.GetArgument<string>(2) : null;
 
             if (depotKey is null)
             {
