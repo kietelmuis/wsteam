@@ -1,9 +1,11 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using wsteam.Data;
+using wsteam.Data.APIs;
 
 namespace wsteam;
 
@@ -24,8 +26,6 @@ public partial class MainWindow : Window
 
     private async void Button_OnClick(object? sender, RoutedEventArgs e)
     {
-        Console.WriteLine("Download Rust");
-
-        await downloadManager.DownloadAppAsync(252490);
+        await downloadManager.DownloadAppAsync(1808500, Directory.GetCurrentDirectory());
     }
 }

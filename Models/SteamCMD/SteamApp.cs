@@ -8,7 +8,7 @@ namespace wsteam.Models.SteamCMD;
 public class SteamApp
 {
     public required DepotsContainer depots { get; set; }
-    public required SteamExtended extended { get; set; }
+    public required SteamConfig config { get; set; }
 }
 
 public class DepotsContainer
