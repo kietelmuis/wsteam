@@ -9,7 +9,7 @@ public class DepotKeyProvider
     private DexLuaApi dexLuaApi;
     private LuaState state = LuaState.Create();
 
-    private Dictionary<int, string> appKeys = [];
+    private Dictionary<int, byte[]> depotKeys = [];
 
     public DepotKeyProvider(DexLuaApi dexLuaApi)
     {
@@ -27,20 +27,21 @@ public class DepotKeyProvider
                 return new(0);
             }
 
-            appKeys[depotId] = depotKey;
+            depotKeys[depotId] = Convert.FromHexString(depotKey);
             return new(0);
         });
     }
 
-    public async Task<string> GetDepotKeysAsync(uint appId, int depotId)
+    public async Task<byte[]?> GetDepotKeysAsync(uint appId, int depotId)
     {
-        if (appKeys.TryGetValue(depotId, out var cached))
+        if (depotKeys.TryGetValue(depotId, out var cached))
             return cached;
 
         var lua = await dexLuaApi.DownloadLuaAsync(appId);
         await state.DoStringAsync(lua);
 
-        return appKeys[depotId]
-            ?? throw new Exception("Depot key was not found");
+        if (!depotKeys.TryGetValue(depotId, out var depotKey)) return null;
+
+        return depotKey;
     }
 }

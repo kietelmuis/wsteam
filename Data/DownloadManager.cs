@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.CDN;
@@ -72,15 +73,15 @@ public class DownloadManager
             if (m is null) return;
 
             var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, (int)m.Value.Value.DepotID);
-            var byteDepotKey = DepotKeyDecryptor.HexStringToBytes(depotKey);
+            if (depotKey is null) return;
+
+            m.Value.Value.DecryptFilenames(depotKey);
 
             if (m is null || m.Value.Value.Files is null) return;
             Console.WriteLine($"downloading manifest {m.Value.Value.ManifestGID}");
 
             m.Value.Value.Files.ForEach(f =>
             {
-                var decryptedFileName = DepotKeyDecryptor.DecryptFilename(f.FileName, byteDepotKey);
-
                 using var writer = new FileWriter(Path.Combine(gameDirectory, f.FileName));
                 Console.WriteLine($"[manifest {m.Value.Value.ManifestGID}] downloading file {f.FileName}");
 
