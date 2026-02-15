@@ -36,7 +36,7 @@ public class KernelManifestApi : ILuaApi
         var url = jsonResponse.GetProperty("url").ToString();
         var manifestResponse = await httpClient.GetAsync(url);
 
-        if (!downloadResponse.IsSuccessStatusCode)
+        if (!manifestResponse.IsSuccessStatusCode)
         {
             Console.WriteLine("KernelManifest url error");
             return null;
