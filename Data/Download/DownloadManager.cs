@@ -7,16 +7,14 @@ using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.CDN;
 using wsteam.Data.APIs;
-using static SteamKit2.SteamApps;
 
-namespace wsteam.Data;
+namespace wsteam.Data.Download;
 
 public class DownloadManager
 {
     private SteamClient steamClient;
     private SteamUser steamUser;
     private SteamContent steamContent;
-    private SteamApps steamApps;
 
     private IManifestApi manifestApi;
     private SteamCMDApi steamCMDApi;
@@ -36,8 +34,6 @@ public class DownloadManager
             ?? throw new InvalidOperationException("SteamUser handler not found");
         this.steamContent = this.steamClient.GetHandler<SteamContent>()
             ?? throw new InvalidOperationException("SteamContent handler not found");
-        this.steamApps = this.steamClient.GetHandler<SteamApps>()
-            ?? throw new InvalidOperationException("SteamApps handler not found");
         this.callbackManager = new CallbackManager(steamClient);
 
         callbackManager.Subscribe<SteamClient.ConnectedCallback>(_ =>
@@ -98,12 +94,6 @@ public class DownloadManager
             .First();
 
         using var cdnClient = new Client(steamClient);
-
-        var accessToken = (await steamApps.PICSGetAccessTokens(appId, null)).AppTokens.First().Value;
-        var data = await steamApps.PICSGetProductInfo(new PICSRequest(appId, accessToken), null);
-
-        var vdf = data.Results.First().Apps.First().Value.KeyValues;
-        // var depots = vdf["depots"];
 
         Console.WriteLine($"connecting to cdn {cdnServer.Host}");
 

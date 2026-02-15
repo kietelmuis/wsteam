@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Lua;
 
+namespace wsteam.Data.Download;
+
 public class DepotKeyProvider
 {
     private ILuaApi luaApi;

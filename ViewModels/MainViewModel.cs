@@ -1,7 +1,7 @@
 using System.IO;
 using System.Threading.Tasks;
-using wsteam.Data;
 using wsteam.Data.APIs;
+using wsteam.Data.Download;
 
 public partial class MainViewModel : ViewModelBase
 {

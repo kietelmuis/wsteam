@@ -2,8 +2,8 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
-using wsteam.Data;
 using wsteam.Data.APIs;
+using wsteam.Data.Download;
 
 namespace wsteam;
 
