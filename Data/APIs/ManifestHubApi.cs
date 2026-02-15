@@ -2,6 +2,7 @@ namespace wsteam.Data.APIs;
 
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -49,10 +50,15 @@ public class ManifestHubApi
                 var response = await httpClient.GetAsync(url);
                 if (!response.IsSuccessStatusCode)
                 {
-                    var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>();
-                    Console.WriteLine($"ManifestHub error ({depotId}): {jsonResponse.GetProperty("error")}, retrying in 1s");
+                    if (response.StatusCode == HttpStatusCode.Forbidden)
+                        throw new Exception("ManifestHub key invalid or expired");
 
-                    await Task.Delay(1000);
+                    var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>();
+                    var error = jsonResponse.GetProperty("error");
+
+                    Console.WriteLine($"ManifestHub error {response.ReasonPhrase} (depot {depotId}): {error}, retrying in 5s");
+
+                    await Task.Delay(5000);
                     continue;
                 }
 
