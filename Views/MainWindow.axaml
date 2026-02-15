@@ -4,10 +4,781 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    d:DesignWidth="800"
-    d:DesignHeight="450"
+    d:DesignWidth="1200"
+    d:DesignHeight="700"
     x:Class="wsteam.MainWindow"
-    Title="wsteam"
+    Title="Steam Downloader"
+    MinWidth="900"
+    MinHeight="600"
+    Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+    ExtendClientAreaToDecorationsHint="False"
 >
-    <Button Click="Button_OnClick">Hello</Button>
+    <Window.Styles>
+        <Style Selector="Button.nav-button">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+            />
+            <Setter
+                Property="BorderBrush"
+                Value="{DynamicResource SystemControlForegroundBaseLowBrush}"
+            />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Margin" Value="8,2" />
+        </Style>
+
+        <Style Selector="Button.nav-button:pointerover">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+            />
+            <Setter
+                Property="BorderBrush"
+                Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+            />
+        </Style>
+
+        <Style Selector="Button.nav-button.selected">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource AccentButtonBackground}"
+            />
+            <Setter
+                Property="Foreground"
+                Value="{DynamicResource AccentButtonForeground}"
+            />
+        </Style>
+
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="4,2" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter
+                Property="Background"
+                Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+            />
+            <Setter
+                Property="BorderBrush"
+                Value="{DynamicResource SystemControlForegroundBaseLowBrush}"
+            />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style Selector="ListBoxItem:pointerover">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+            />
+            <Setter
+                Property="BorderBrush"
+                Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+            />
+        </Style>
+
+        <Style Selector="ListBoxItem:selected">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource AccentButtonBackground}"
+            />
+            <Setter
+                Property="Foreground"
+                Value="{DynamicResource AccentButtonForeground}"
+            />
+            <Setter
+                Property="BorderBrush"
+                Value="{DynamicResource AccentButtonBackground}"
+            />
+        </Style>
+
+        <Style Selector="Button.primary">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource AccentButtonBackground}"
+            />
+            <Setter
+                Property="Foreground"
+                Value="{DynamicResource AccentButtonForeground}"
+            />
+            <Setter Property="Padding" Value="24,12" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+
+        <Style Selector="Button.primary:pointerover">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource AccentButtonBackgroundPointerOver}"
+            />
+        </Style>
+
+        <Style Selector="Button.secondary">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+            />
+            <Setter
+                Property="BorderBrush"
+                Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+            />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="16,10" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+
+        <Style Selector="Button.secondary:pointerover">
+            <Setter
+                Property="Background"
+                Value="{DynamicResource SystemControlBackgroundBaseMediumBrush}"
+            />
+            <Setter
+                Property="BorderBrush"
+                Value="{DynamicResource SystemControlForegroundBaseHighBrush}"
+            />
+        </Style>
+    </Window.Styles>
+
+    <Panel>
+        <!-- Main Container -->
+        <!-- Solid background for X11 compatibility -->
+        <Border
+            Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+        />
+
+        <Grid RowDefinitions="Auto,*">
+            <!-- Title Bar -->
+            <Border
+                Grid.Row="0"
+                Height="40"
+                Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                BorderThickness="0,0,0,1"
+                IsHitTestVisible="False"
+            >
+                <TextBlock
+                    Text="Steam Downloader"
+                    FontSize="13"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center"
+                    Margin="60,0,0,0"
+                />
+            </Border>
+
+            <!-- Main Content -->
+            <Grid Grid.Row="1" ColumnDefinitions="260,*" Margin="0,8,0,0">
+
+                <!-- Left Sidebar -->
+                <Border
+                    Grid.Column="0"
+                    Background="{DynamicResource SystemControlBackgroundAltMediumBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Margin="8,8,4,8"
+                    Padding="0,8"
+                    BoxShadow="0 2 8 0 #20000000"
+                >
+                    <Grid RowDefinitions="Auto,*,Auto">
+
+                        <!-- Navigation Buttons -->
+                        <StackPanel Grid.Row="0" Spacing="4">
+                            <Button
+                                Classes="nav-button selected"
+                                Name="GamesButton"
+                            >
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="12"
+                                >
+                                    <Path
+                                        Data="M12 2L2 7V17L12 22L22 17V7L12 2M12 4.18L19.5 8.09L12 12L4.5 8.09L12 4.18M4 10L11 14V20L4 16V10M20 10V16L13 20V14L20 10Z"
+                                        Fill="{Binding $parent[Button].Foreground}"
+                                        Stretch="Uniform"
+                                        Width="18"
+                                        Height="18"
+                                    />
+                                    <TextBlock
+                                        Text="Games"
+                                        VerticalAlignment="Center"
+                                        FontWeight="Medium"
+                                    />
+                                </StackPanel>
+                            </Button>
+
+                            <Button Classes="nav-button" Name="SourcesButton">
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="12"
+                                >
+                                    <Path
+                                        Data="M12 2C6.5 2 2 6.5 2 12S6.5 22 12 22 22 17.5 22 12 17.5 2 12 2M12 4C16.41 4 20 7.59 20 12S16.41 20 12 20 4 16.41 4 12 7.59 4 12 4M12 6C8.69 6 6 8.69 6 12S8.69 18 12 18 18 15.31 18 12 15.31 6 12 6M12 8C14.21 8 16 9.79 16 12S14.21 16 12 16 8 14.21 8 12 9.79 8 12 8Z"
+                                        Fill="{Binding $parent[Button].Foreground}"
+                                        Stretch="Uniform"
+                                        Width="18"
+                                        Height="18"
+                                    />
+                                    <TextBlock
+                                        Text="Sources"
+                                        VerticalAlignment="Center"
+                                        FontWeight="Medium"
+                                    />
+                                </StackPanel>
+                            </Button>
+
+                            <Button Classes="nav-button" Name="SettingsButton">
+                                <StackPanel
+                                    Orientation="Horizontal"
+                                    Spacing="12"
+                                >
+                                    <Path
+                                        Data="M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z"
+                                        Fill="{Binding $parent[Button].Foreground}"
+                                        Stretch="Uniform"
+                                        Width="18"
+                                        Height="18"
+                                    />
+                                    <TextBlock
+                                        Text="Settings"
+                                        VerticalAlignment="Center"
+                                        FontWeight="Medium"
+                                    />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Games List -->
+                        <Border
+                            Grid.Row="1"
+                            Margin="8,16,8,8"
+                            Background="{DynamicResource SystemControlBackgroundAltMediumBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            BoxShadow="0 1 4 0 #15000000"
+                            Name="GamesListContainer"
+                        >
+                            <ScrollViewer>
+                                <ListBox
+                                    Name="GamesList"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                >
+                                    <!-- Sample Game Items -->
+                                    <ListBoxItem>
+                                        <Grid ColumnDefinitions="36,*,Auto">
+                                            <Border
+                                                Grid.Column="0"
+                                                Width="32"
+                                                Height="32"
+                                                CornerRadius="6"
+                                                ClipToBounds="True"
+                                            >
+                                                <Panel Background="#1B2838" />
+                                            </Border>
+                                            <StackPanel
+                                                Grid.Column="1"
+                                                Margin="10,0,0,0"
+                                                VerticalAlignment="Center"
+                                            >
+                                                <TextBlock
+                                                    Text="Half-Life 2"
+                                                    FontWeight="Medium"
+                                                    FontSize="13"
+                                                />
+                                                <TextBlock
+                                                    Text="Ready"
+                                                    FontSize="11"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                            </StackPanel>
+                                            <Ellipse
+                                                Grid.Column="2"
+                                                Width="8"
+                                                Height="8"
+                                                Fill="#4CAF50"
+                                                VerticalAlignment="Center"
+                                            />
+                                        </Grid>
+                                    </ListBoxItem>
+
+                                    <ListBoxItem>
+                                        <Grid ColumnDefinitions="36,*,Auto">
+                                            <Border
+                                                Grid.Column="0"
+                                                Width="32"
+                                                Height="32"
+                                                CornerRadius="6"
+                                                ClipToBounds="True"
+                                            >
+                                                <Panel Background="#1B2838" />
+                                            </Border>
+                                            <StackPanel
+                                                Grid.Column="1"
+                                                Margin="10,0,0,0"
+                                                VerticalAlignment="Center"
+                                            >
+                                                <TextBlock
+                                                    Text="Portal 2"
+                                                    FontWeight="Medium"
+                                                    FontSize="13"
+                                                />
+                                                <TextBlock
+                                                    Text="Downloading - 45%"
+                                                    FontSize="11"
+                                                    Foreground="#2196F3"
+                                                />
+                                            </StackPanel>
+                                            <Ellipse
+                                                Grid.Column="2"
+                                                Width="8"
+                                                Height="8"
+                                                Fill="#2196F3"
+                                                VerticalAlignment="Center"
+                                            />
+                                        </Grid>
+                                    </ListBoxItem>
+
+                                    <ListBoxItem>
+                                        <Grid ColumnDefinitions="36,*,Auto">
+                                            <Border
+                                                Grid.Column="0"
+                                                Width="32"
+                                                Height="32"
+                                                CornerRadius="6"
+                                                ClipToBounds="True"
+                                            >
+                                                <Panel Background="#1B2838" />
+                                            </Border>
+                                            <StackPanel
+                                                Grid.Column="1"
+                                                Margin="10,0,0,0"
+                                                VerticalAlignment="Center"
+                                            >
+                                                <TextBlock
+                                                    Text="Team Fortress 2"
+                                                    FontWeight="Medium"
+                                                    FontSize="13"
+                                                />
+                                                <TextBlock
+                                                    Text="Queued"
+                                                    FontSize="11"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                            </StackPanel>
+                                            <Ellipse
+                                                Grid.Column="2"
+                                                Width="8"
+                                                Height="8"
+                                                Fill="#9E9E9E"
+                                                VerticalAlignment="Center"
+                                            />
+                                        </Grid>
+                                    </ListBoxItem>
+                                </ListBox>
+                            </ScrollViewer>
+                        </Border>
+
+                        <!-- Add Game Button -->
+                        <Button
+                            Grid.Row="2"
+                            Classes="secondary"
+                            HorizontalAlignment="Stretch"
+                            Margin="12,8,12,12"
+                            Name="AddGameButton"
+                        >
+                            <StackPanel
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                HorizontalAlignment="Center"
+                            >
+                                <Path
+                                    Data="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"
+                                    Fill="{Binding $parent[Button].Foreground}"
+                                    Stretch="Uniform"
+                                    Width="16"
+                                    Height="16"
+                                />
+                                <TextBlock Text="Add Game" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- Main Content Area -->
+                <Border
+                    Grid.Column="1"
+                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Margin="4,8,8,8"
+                    BoxShadow="0 2 8 0 #20000000"
+                >
+                    <ScrollViewer>
+                        <StackPanel
+                            Margin="32,24"
+                            Spacing="24"
+                            Name="MainContent"
+                        >
+
+                            <!-- Game Header -->
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border
+                                    Grid.Column="0"
+                                    Width="120"
+                                    Height="120"
+                                    CornerRadius="12"
+                                    ClipToBounds="True"
+                                    BoxShadow="0 4 12 0 #30000000"
+                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                    BorderThickness="1"
+                                >
+                                    <Panel Background="#1B2838">
+                                        <TextBlock
+                                            Text="🎮"
+                                            FontSize="48"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                        />
+                                    </Panel>
+                                </Border>
+
+                                <StackPanel
+                                    Grid.Column="1"
+                                    Margin="24,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Spacing="8"
+                                >
+                                    <TextBlock
+                                        Text="Portal 2"
+                                        FontSize="28"
+                                        FontWeight="Bold"
+                                    />
+                                    <TextBlock
+                                        Text="Valve Corporation • Puzzle, Platform"
+                                        FontSize="14"
+                                        Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                    />
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="12"
+                                        Margin="0,4,0,0"
+                                    >
+                                        <Border
+                                            Background="#4CAF50"
+                                            CornerRadius="4"
+                                            Padding="8,4"
+                                        >
+                                            <TextBlock
+                                                Text="Verified"
+                                                FontSize="12"
+                                                Foreground="White"
+                                                FontWeight="Medium"
+                                            />
+                                        </Border>
+                                        <Border
+                                            Background="{DynamicResource SystemChromeMediumLowColor}"
+                                            CornerRadius="4"
+                                            Padding="8,4"
+                                        >
+                                            <TextBlock
+                                                Text="15.2 GB"
+                                                FontSize="12"
+                                                FontWeight="Medium"
+                                            />
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
+                                    Spacing="8"
+                                >
+                                    <Button
+                                        Classes="primary"
+                                        Height="44"
+                                        MinWidth="140"
+                                    >
+                                        <StackPanel
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                        >
+                                            <Path
+                                                Data="M8,5.14V19.14L19,12.14L8,5.14Z"
+                                                Fill="White"
+                                                Stretch="Uniform"
+                                                Width="14"
+                                                Height="14"
+                                                VerticalAlignment="Center"
+                                            />
+                                            <TextBlock
+                                                Text="Download"
+                                                FontSize="14"
+                                            />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button
+                                        Classes="secondary"
+                                        HorizontalAlignment="Stretch"
+                                    >
+                                        <TextBlock
+                                            Text="More Options"
+                                            FontSize="13"
+                                        />
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Download Progress -->
+                            <Border
+                                Background="{DynamicResource SystemControlBackgroundAltMediumBrush}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="20"
+                                BoxShadow="0 2 6 0 #20000000"
+                            >
+                                <StackPanel Spacing="12">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Text="Download Progress"
+                                            FontWeight="SemiBold"
+                                            FontSize="15"
+                                        />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Text="45% • 6.8 GB / 15.2 GB"
+                                            FontSize="13"
+                                            Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                        />
+                                    </Grid>
+
+                                    <ProgressBar
+                                        Value="45"
+                                        Maximum="100"
+                                        Height="8"
+                                        CornerRadius="4"
+                                        Foreground="#2196F3"
+                                    />
+
+                                    <Grid
+                                        ColumnDefinitions="*,*,*"
+                                        Margin="0,8,0,0"
+                                    >
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock
+                                                Text="Speed"
+                                                FontSize="12"
+                                                Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                            />
+                                            <TextBlock
+                                                Text="12.5 MB/s"
+                                                FontSize="16"
+                                                FontWeight="Medium"
+                                                Margin="0,4,0,0"
+                                            />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock
+                                                Text="Time Remaining"
+                                                FontSize="12"
+                                                Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                            />
+                                            <TextBlock
+                                                Text="11 minutes"
+                                                FontSize="16"
+                                                FontWeight="Medium"
+                                                Margin="0,4,0,0"
+                                            />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock
+                                                Text="Status"
+                                                FontSize="12"
+                                                Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                            />
+                                            <TextBlock
+                                                Text="Downloading"
+                                                FontSize="16"
+                                                FontWeight="Medium"
+                                                Margin="0,4,0,0"
+                                                Foreground="#2196F3"
+                                            />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <StackPanel
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        Margin="0,12,0,0"
+                                    >
+                                        <Button
+                                            Classes="secondary"
+                                            Padding="12,8"
+                                        >
+                                            <StackPanel
+                                                Orientation="Horizontal"
+                                                Spacing="6"
+                                            >
+                                                <Path
+                                                    Data="M6,14H18V18H6M6,6H18V10H6V6Z"
+                                                    Fill="{Binding $parent[Button].Foreground}"
+                                                    Stretch="Uniform"
+                                                    Width="14"
+                                                    Height="14"
+                                                />
+                                                <TextBlock Text="Pause" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button
+                                            Classes="secondary"
+                                            Padding="12,8"
+                                        >
+                                            <StackPanel
+                                                Orientation="Horizontal"
+                                                Spacing="6"
+                                            >
+                                                <Path
+                                                    Data="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M10,9H14V15H10V9Z"
+                                                    Fill="{Binding $parent[Button].Foreground}"
+                                                    Stretch="Uniform"
+                                                    Width="14"
+                                                    Height="14"
+                                                />
+                                                <TextBlock Text="Cancel" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Game Info -->
+                            <StackPanel Spacing="16">
+                                <TextBlock
+                                    Text="About"
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                />
+                                <TextBlock
+                                    TextWrapping="Wrap"
+                                    FontSize="14"
+                                    LineHeight="22"
+                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                >
+                                    Portal 2 is a first-person puzzle-platform video game developed by Valve. Players solve puzzles by placing portals and teleporting between them. The game includes a single-player campaign featuring a new protagonist, Chell, and a brand new co-operative mode featuring two robots.
+                                </TextBlock>
+                            </StackPanel>
+
+                            <!-- System Requirements -->
+                            <Border
+                                Background="{DynamicResource SystemControlBackgroundAltMediumBrush}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="20"
+                                BoxShadow="0 2 6 0 #20000000"
+                            >
+                                <Grid ColumnDefinitions="*,*">
+                                    <StackPanel Grid.Column="0" Spacing="12">
+                                        <TextBlock
+                                            Text="Minimum Requirements"
+                                            FontWeight="SemiBold"
+                                            FontSize="15"
+                                        />
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock
+                                                    Text="OS"
+                                                    FontSize="12"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                                <TextBlock
+                                                    Text="Windows 7 / Vista / XP"
+                                                    FontSize="13"
+                                                />
+                                            </StackPanel>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock
+                                                    Text="Processor"
+                                                    FontSize="12"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                                <TextBlock
+                                                    Text="3.0 GHz P4, Dual Core 2.0"
+                                                    FontSize="13"
+                                                />
+                                            </StackPanel>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock
+                                                    Text="Memory"
+                                                    FontSize="12"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                                <TextBlock
+                                                    Text="2 GB RAM"
+                                                    FontSize="13"
+                                                />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Spacing="12">
+                                        <TextBlock
+                                            Text="Recommended Requirements"
+                                            FontWeight="SemiBold"
+                                            FontSize="15"
+                                        />
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock
+                                                    Text="OS"
+                                                    FontSize="12"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                                <TextBlock
+                                                    Text="Windows 7 / Vista / XP"
+                                                    FontSize="13"
+                                                />
+                                            </StackPanel>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock
+                                                    Text="Processor"
+                                                    FontSize="12"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                                <TextBlock
+                                                    Text="Intel Core 2 Duo E6600"
+                                                    FontSize="13"
+                                                />
+                                            </StackPanel>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock
+                                                    Text="Memory"
+                                                    FontSize="12"
+                                                    Foreground="{DynamicResource TextControlPlaceholderForeground}"
+                                                />
+                                                <TextBlock
+                                                    Text="4 GB RAM"
+                                                    FontSize="13"
+                                                />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
+    </Panel>
 </Window>

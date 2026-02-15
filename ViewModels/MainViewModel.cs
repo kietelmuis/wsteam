@@ -1,10 +1,9 @@
 using System.IO;
-using System.Net.Http;
 using System.Threading.Tasks;
 using wsteam.Data;
 using wsteam.Data.APIs;
 
-public partial class MainViewModel
+public partial class MainViewModel : ViewModelBase
 {
     private ManifestHubApi manifestHubApi;
     private SteamCMDApi steamCMDApi;
@@ -13,6 +12,10 @@ public partial class MainViewModel
     private readonly DownloadManager downloadManager;
 
     private readonly string downloadDirectory = Path.Combine(Directory.GetCurrentDirectory(), "games");
+
+    public bool IsGamesSelected { get; set; }
+    public bool IsSourcesSelected { get; set; }
+    public bool IsSettingsSelected { get; set; }
 
     public MainViewModel(ManifestHubApi manifestHubApi, SteamCMDApi steamCMDApi, DepotKeyProvider depotKeyProvider)
     {
