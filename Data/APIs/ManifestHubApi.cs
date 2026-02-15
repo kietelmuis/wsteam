@@ -11,21 +11,14 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.WebUtilities;
 using SteamKit2;
 
-public class ManifestHubApi : IManifestApi
+public class ManifestHubApi(HttpClient httpClient) : IManifestApi
 {
-    private HttpClient httpClient;
-    private readonly string apiKey;
+    private readonly HttpClient httpClient = httpClient;
+    private readonly string apiKey = Environment.GetEnvironmentVariable("MANIFEST_API_KEY")
+            ?? throw new InvalidOperationException("No manifest api key");
     private const int maxRetries = 5;
 
-    private SemaphoreSlim semaphoreSlim = new SemaphoreSlim(1);
-
-    public ManifestHubApi(HttpClient httpClient)
-    {
-        apiKey = Environment.GetEnvironmentVariable("MANIFEST_API_KEY")
-            ?? throw new Exception("No manifest api key");
-
-        this.httpClient = httpClient;
-    }
+    private readonly SemaphoreSlim semaphoreSlim = new(1);
 
     public async Task<DepotManifest?> GetManifestAsync(uint depotId, ulong manifestId)
     {
@@ -51,7 +44,7 @@ public class ManifestHubApi : IManifestApi
                 if (!response.IsSuccessStatusCode)
                 {
                     if (response.StatusCode == HttpStatusCode.Forbidden)
-                        throw new Exception("ManifestHub key invalid or expired");
+                        throw new InvalidOperationException("ManifestHub key invalid or expired");
 
                     var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>();
                     var error = jsonResponse.GetProperty("error");
