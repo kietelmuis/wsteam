@@ -2,18 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Lua;
-using wsteam.Data.APIs;
 
 public class DepotKeyProvider
 {
-    private DexLuaApi dexLuaApi;
+    private ILuaApi luaApi;
     private LuaState state = LuaState.Create();
 
     private Dictionary<uint, byte[]> depotKeys = [];
 
-    public DepotKeyProvider(DexLuaApi dexLuaApi)
+    public DepotKeyProvider(ILuaApi luaApi)
     {
-        this.dexLuaApi = dexLuaApi;
+        this.luaApi = luaApi;
 
         state.Environment["addappid"] = new LuaFunction((context, ct) =>
         {
@@ -33,7 +32,8 @@ public class DepotKeyProvider
         if (depotKeys.TryGetValue(depotId, out var cached))
             return cached;
 
-        var lua = await dexLuaApi.DownloadLuaAsync(appId);
+        var lua = await luaApi.GetLuaAsync(appId)
+            ?? throw new Exception("Could not get lua");
         await state.DoStringAsync(lua);
 
         if (!depotKeys.TryGetValue(depotId, out var depotKey))

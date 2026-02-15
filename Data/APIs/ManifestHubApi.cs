@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.WebUtilities;
 using SteamKit2;
 
-public class ManifestHubApi
+public class ManifestHubApi : IManifestApi
 {
     private HttpClient httpClient;
     private readonly string apiKey;

@@ -5,7 +5,7 @@ using wsteam.Data.APIs;
 
 public partial class MainViewModel : ViewModelBase
 {
-    private ManifestHubApi manifestHubApi;
+    private IManifestApi manifestApi;
     private SteamCMDApi steamCMDApi;
     private DepotKeyProvider depotKeyProvider;
 
@@ -17,13 +17,13 @@ public partial class MainViewModel : ViewModelBase
     public bool IsSourcesSelected { get; set; }
     public bool IsSettingsSelected { get; set; }
 
-    public MainViewModel(ManifestHubApi manifestHubApi, SteamCMDApi steamCMDApi, DepotKeyProvider depotKeyProvider)
+    public MainViewModel(IManifestApi manifestApi, SteamCMDApi steamCMDApi, DepotKeyProvider depotKeyProvider)
     {
-        this.manifestHubApi = manifestHubApi;
+        this.manifestApi = manifestApi;
         this.steamCMDApi = steamCMDApi;
         this.depotKeyProvider = depotKeyProvider;
 
-        this.downloadManager = new(manifestHubApi, steamCMDApi, depotKeyProvider);
+        this.downloadManager = new(manifestApi, steamCMDApi, depotKeyProvider);
     }
 
     public Task DownloadAsync(uint appId)

@@ -1,7 +1,6 @@
 using System;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using wsteam.Data;
 
 namespace wsteam;
 
@@ -26,7 +25,7 @@ public partial class MainWindow : Window
         addGameButton?.Click += async (o, r) =>
         {
             Console.WriteLine("Clicked");
-            await mainView!.DownloadAsync(1245620);
+            await mainView!.DownloadAsync(4164420);
         };
         gamesButton?.Click += OnNavigationClick;
         sourcesButton?.Click += OnNavigationClick;

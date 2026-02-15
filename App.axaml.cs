@@ -17,11 +17,11 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         var services = new ServiceCollection();
-        services.AddHttpClient<DexLuaApi>();
-        services.AddHttpClient<ManifestHubApi>();
+        services.AddHttpClient<ILuaApi, KernelManifestApi>();
+        services.AddHttpClient<IManifestApi, ManifestHubApi>();
         services.AddHttpClient<SteamCMDApi>();
 
-        services.AddSingleton<ManifestHubApi>();
+        services.AddSingleton<KernelManifestApi>();
         services.AddSingleton<SteamCMDApi>();
         services.AddSingleton<DepotKeyProvider>();
         services.AddSingleton<DownloadManager>();

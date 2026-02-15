@@ -12,8 +12,8 @@ public class FileWriter : IDisposable
     {
         var directory = Path.GetDirectoryName(fileDirectory)
             ?? throw new DirectoryNotFoundException("Invalid fileDirectory");
+
         Directory.CreateDirectory(directory);
-        File.Create(fileDirectory);
 
         file = File.OpenHandle(
             fileDirectory,
@@ -25,9 +25,7 @@ public class FileWriter : IDisposable
     public async Task WriteChunkAsync(DepotManifest.ChunkData chunk, Memory<byte> data)
     {
         var offset = (long)checked(chunk.Offset);
-
         await RandomAccess.WriteAsync(file, data, offset);
-        Console.WriteLine($"Written chunk {chunk.ChunkID} of {data.Length}");
     }
 
     public void Flush() => RandomAccess.FlushToDisk(file);
