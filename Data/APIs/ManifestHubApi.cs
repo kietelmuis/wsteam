@@ -50,7 +50,7 @@ public class ManifestHubApi
                 if (!response.IsSuccessStatusCode)
                 {
                     var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>();
-                    Console.WriteLine($"ManifestHub error: {jsonResponse.GetProperty("error")}");
+                    Console.WriteLine($"ManifestHub error ({depotId}): {jsonResponse.GetProperty("error")}, retrying in 1s");
 
                     await Task.Delay(1000);
                     continue;

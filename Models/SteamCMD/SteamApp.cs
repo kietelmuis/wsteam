@@ -14,7 +14,7 @@ public class SteamApp
 public class DepotsContainer
 {
     [JsonExtensionData]
-    public Dictionary<string, JsonElement> OtherDepots { get; set; }
+    public Dictionary<string, JsonElement>? OtherDepots { get; set; }
 
     [JsonIgnore]
     public Dictionary<string, SteamDepot> DepotObjects
@@ -29,7 +29,7 @@ public class DepotsContainer
                              kvp.Value.TryGetProperty("manifests", out _))
                 .ToDictionary(
                     kvp => kvp.Key,
-                    kvp => JsonSerializer.Deserialize<SteamDepot>(kvp.Value.GetRawText())
+                    kvp => JsonSerializer.Deserialize<SteamDepot>(kvp.Value.GetRawText())!
                 );
         }
     }
