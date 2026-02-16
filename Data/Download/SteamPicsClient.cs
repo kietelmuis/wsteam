@@ -14,11 +14,23 @@ public class SteamPicsClient(SteamApps steamApps)
 {
     private readonly SteamApps steamApps = steamApps;
 
+    private async Task<ulong?> GetAccessTokenAsync(uint appId)
+    {
+        var accessTokens = await steamApps.PICSGetAccessTokens(appId, null);
+
+        return
+            accessTokens.AppTokens.TryGetValue(appId, out var accessToken) ?
+            accessToken :
+            null;
+    }
+
     public async Task GetAppDataAsync(uint appId)
     {
-        var accessToken = (await steamApps.PICSGetAccessTokens(appId, null)).AppTokens.First().Value;
+        var accessToken = await GetAccessTokenAsync(appId)
+            ?? throw new Exception($"Failed to get PICS accessToken for app {appId}");
+
         var data = await steamApps.PICSGetProductInfo(new PICSRequest(appId, accessToken), null);
-        // data.Results?.First().Apps.First().Value.KeyValues.SaveToFile("./app.vdf", false);
+        data.Results?.First().Apps.First().Value.KeyValues.SaveToFile("./app.vdf", false);
 
         using var vdfStream = new MemoryStream();
         data.Results?.First().Apps.First().Value.KeyValues.SaveToStream(vdfStream, false);

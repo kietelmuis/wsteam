@@ -7,10 +7,10 @@ namespace wsteam.Data.Download;
 
 public class DepotKeyProvider
 {
-    private ILuaApi luaApi;
-    private LuaState state = LuaState.Create();
+    private readonly ILuaApi luaApi;
+    private readonly LuaState state = LuaState.Create();
 
-    private Dictionary<uint, byte[]> depotKeys = [];
+    private readonly Dictionary<uint, byte[]> depotKeys = [];
 
     public DepotKeyProvider(ILuaApi luaApi)
     {

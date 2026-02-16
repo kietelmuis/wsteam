@@ -25,6 +25,7 @@ public partial class App : Application
         services.AddSingleton<SteamCMDApi>();
         services.AddSingleton<DepotKeyProvider>();
         services.AddSingleton<DownloadManager>();
+        services.AddSingleton<SteamSession>();
         services.AddSingleton<MainViewModel>();
 
         var provider = services.BuildServiceProvider();

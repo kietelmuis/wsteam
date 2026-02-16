@@ -6,11 +6,11 @@ using SteamKit2;
 
 namespace wsteam.Data.Download;
 
-public class FileWriter : IDisposable
+public class ChunkedFileWriter : IDisposable
 {
     private readonly SafeFileHandle file;
 
-    public FileWriter(string fileDirectory)
+    public ChunkedFileWriter(string fileDirectory)
     {
         var directory = Path.GetDirectoryName(fileDirectory)
             ?? throw new DirectoryNotFoundException("Invalid fileDirectory");

@@ -12,64 +12,17 @@ namespace wsteam.Data.Download;
 
 public class DownloadManager
 {
-    private SteamClient steamClient;
-    private SteamUser steamUser;
-    private SteamContent steamContent;
-
+    private SteamSession steamSession;
     private IManifestApi manifestApi;
     private SteamCMDApi steamCMDApi;
     private DepotKeyProvider depotKeyProvider;
-    private CallbackManager callbackManager;
 
-    private bool loggedIn = false;
-
-    public DownloadManager(IManifestApi manifestApi, SteamCMDApi steamCMDApi, DepotKeyProvider depotKeyProvider)
+    public DownloadManager(SteamSession steamSession, IManifestApi manifestApi, SteamCMDApi steamCMDApi, DepotKeyProvider depotKeyProvider)
     {
+        this.steamSession = steamSession;
         this.manifestApi = manifestApi;
         this.steamCMDApi = steamCMDApi;
         this.depotKeyProvider = depotKeyProvider;
-
-        this.steamClient = new SteamClient();
-        this.steamUser = this.steamClient.GetHandler<SteamUser>()
-            ?? throw new InvalidOperationException("SteamUser handler not found");
-        this.steamContent = this.steamClient.GetHandler<SteamContent>()
-            ?? throw new InvalidOperationException("SteamContent handler not found");
-        this.callbackManager = new CallbackManager(steamClient);
-
-        callbackManager.Subscribe<SteamClient.ConnectedCallback>(_ =>
-        {
-            Console.WriteLine("SteamClient connected, logging on");
-            steamUser.LogOnAnonymous();
-        });
-
-        callbackManager.Subscribe<SteamClient.DisconnectedCallback>(cb =>
-        {
-            Console.WriteLine($"SteamClient disconnected: forced={!cb.UserInitiated}");
-        });
-
-        callbackManager.Subscribe<SteamUser.LoggedOffCallback>(cb =>
-        {
-            Console.WriteLine($"SteamUser logged off: {cb.Result}");
-        });
-
-        callbackManager.Subscribe<SteamUser.LoggedOnCallback>(LogOnCallback);
-
-        steamClient.Connect();
-
-        while (!loggedIn) callbackManager.RunWaitCallbacks(TimeSpan.FromSeconds(1));
-    }
-
-    private void LogOnCallback(SteamUser.LoggedOnCallback loggedOn)
-    {
-        if (loggedOn.Result == EResult.OK)
-        {
-            Console.WriteLine("Logged in!");
-            loggedIn = true;
-        }
-        else
-        {
-            Console.WriteLine($"Error upon logging in: {loggedOn.Result}");
-        }
     }
 
     private class ManifestWrapper
@@ -80,6 +33,8 @@ public class DownloadManager
 
     public async Task DownloadAppAsync(uint appId, string path)
     {
+        await steamSession.WaitLoggedOnAsync();
+
         var game = await steamCMDApi.GetInfoAsync(appId);
         var depots = game.depots.DepotObjects.ToList();
 
@@ -89,11 +44,11 @@ public class DownloadManager
         var gameDirectory = Path.Combine(path, game.config.installdir);
         Directory.CreateDirectory(gameDirectory);
 
-        var cdnServer = (await steamContent.GetServersForSteamPipe())
+        var cdnServer = (await steamSession.SteamContent.GetServersForSteamPipe())
             .ToList()
             .First();
 
-        using var cdnClient = new Client(steamClient);
+        using var cdnClient = new Client(steamSession.SteamClient);
 
         Console.WriteLine($"connecting to cdn {cdnServer.Host}");
 
@@ -155,20 +110,32 @@ public class DownloadManager
         var fileName = Path.GetFileName(file.FileName);
         var filePath = Path.Combine(gameDirectory, file.FileName);
 
+        if (File.Exists(filePath))
+        {
+            using var fileStream = new FileStream(filePath, FileMode.Open);
+            var fileHash = await SHA1.HashDataAsync(fileStream);
+
+            if (Enumerable.SequenceEqual(file.FileHash, fileHash))
+            {
+                Console.WriteLine($"[file {fileName}] file verified");
+                return;
+            }
+        }
+
         var chunkCount = file.Chunks.Count();
         if (chunkCount == 0)
         {
+            Console.WriteLine($"[{depotName}] creating directory {file.FileName}");
             Directory.CreateDirectory(filePath);
-            Console.WriteLine($"[{depotName}] created directory {file.FileName}");
             return;
         }
 
-        Console.WriteLine($"[{depotName}] downloading file {fileName}, {file.Chunks.Count()} chunks");
-
-        using var writer = new FileWriter(filePath);
+        Console.WriteLine($"[file {fileName}] downloading file; {chunkCount} chunks, {file.TotalSize} bytes");
 
         try
         {
+            using var writer = new ChunkedFileWriter(filePath);
+
             await Parallel.ForEachAsync(file.Chunks, async (chunk, ct) =>
                 await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer));
 
@@ -181,15 +148,14 @@ public class DownloadManager
         }
     }
 
-    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[] depotKey, FileWriter writer, Client cdnClient, Server cdnServer)
+    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[] depotKey, ChunkedFileWriter writer, Client cdnClient, Server cdnServer)
     {
-        var chunkId = Convert.ToHexStringLower(SHA256.HashData(chunk.ChunkID ?? []));
-
         var length = checked((int)chunk.UncompressedLength);
         byte[] buffer = new byte[length];
 
         var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
         await writer.WriteChunkAsync(chunk, buffer);
-        Console.WriteLine($"[{chunkId}] written {bytes} bytes");
+
+        Console.WriteLine($"[depot {depotId}] written {bytes} bytes");
     }
 }
