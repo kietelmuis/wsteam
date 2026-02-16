@@ -28,6 +28,7 @@ public class DownloadManager
     private class ManifestWrapper
     {
         public required DepotManifest Manifest;
+        public byte[]? DepotKey;
         public required uint DepotId;
     }
 
@@ -50,7 +51,7 @@ public class DownloadManager
 
         using var cdnClient = new Client(steamSession.SteamClient);
 
-        Console.WriteLine($"connecting to cdn {cdnServer.Host}");
+        Console.WriteLine($"using cdn {cdnServer.Host}");
 
         var manifestDownloadTasks = depots.Select(async depot =>
         {
@@ -62,11 +63,24 @@ public class DownloadManager
             var manifest = await manifestApi.GetManifestAsync(depotId, manifestId);
             if (manifest is null) return null;
 
-            return new ManifestWrapper
+            var wrappedManifest = new ManifestWrapper
             {
                 DepotId = depotId,
                 Manifest = manifest,
             };
+
+            if (manifest.FilenamesEncrypted)
+            {
+                var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
+                if (depotKey is null) return null;
+
+                var result = manifest.DecryptFilenames(depotKey);
+                if (!result) return null;
+
+                wrappedManifest.DepotKey = depotKey;
+            }
+
+            return wrappedManifest;
         });
 
         var manifestFileResults = await Task.WhenAll(manifestDownloadTasks);
@@ -85,27 +99,22 @@ public class DownloadManager
     {
         foreach (var manifestInfo in manifestFiles)
         {
-            var depotId = manifestInfo.DepotId;
             var manifest = manifestInfo.Manifest;
             var depotName = $"depot {manifest.DepotID}";
 
-            var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
-            if (depotKey is null) continue;
             if (manifest.Files is null) continue;
-
-            if (manifest.FilenamesEncrypted) manifest.DecryptFilenames(depotKey);
 
             Console.WriteLine($"[app {appId}] downloading {depotName} of {manifest.TotalUncompressedSize}");
 
             await Parallel.ForEachAsync(
                 manifest.Files,
                 new ParallelOptions { MaxDegreeOfParallelism = 4 },
-                async (file, ct) => await DownloadFileAsync(file, depotId, depotKey, depotName, gameDirectory, cdnClient, cdnServer)
+                async (file, ct) => await DownloadFileAsync(file, manifestInfo.DepotId, manifestInfo.DepotKey, depotName, gameDirectory, cdnClient, cdnServer)
             );
         }
     }
 
-    private async Task DownloadFileAsync(DepotManifest.FileData file, uint depotId, byte[] depotKey, string depotName, string gameDirectory, Client cdnClient, Server cdnServer)
+    private async Task DownloadFileAsync(DepotManifest.FileData file, uint depotId, byte[]? depotKey, string depotName, string gameDirectory, Client cdnClient, Server cdnServer)
     {
         var fileName = Path.GetFileName(file.FileName);
         var filePath = Path.Combine(gameDirectory, file.FileName);
@@ -148,7 +157,7 @@ public class DownloadManager
         }
     }
 
-    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[] depotKey, ChunkedFileWriter writer, Client cdnClient, Server cdnServer)
+    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[]? depotKey, ChunkedFileWriter writer, Client cdnClient, Server cdnServer)
     {
         var length = checked((int)chunk.UncompressedLength);
         byte[] buffer = new byte[length];
