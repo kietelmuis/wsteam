@@ -11,20 +11,17 @@ using wsteam.Data.Steam;
 
 namespace wsteam.Data.Downloads;
 
-public class DownloadManager
+public class DownloadManager(
+    SteamSession steamSession,
+    IManifestApi manifestApi,
+    SteamPicsClient picsClient,
+    DepotKeyProvider depotKeyProvider
+)
 {
-    private SteamSession steamSession;
-    private IManifestApi manifestApi;
-    private SteamPicsClient picsClient;
-    private DepotKeyProvider depotKeyProvider;
-
-    public DownloadManager(SteamSession steamSession, IManifestApi manifestApi, SteamPicsClient picsClient, DepotKeyProvider depotKeyProvider)
-    {
-        this.steamSession = steamSession;
-        this.manifestApi = manifestApi;
-        this.picsClient = picsClient;
-        this.depotKeyProvider = depotKeyProvider;
-    }
+    private readonly SteamSession steamSession = steamSession;
+    private readonly IManifestApi manifestApi = manifestApi;
+    private readonly SteamPicsClient picsClient = picsClient;
+    private readonly DepotKeyProvider depotKeyProvider = depotKeyProvider;
 
     private class ManifestWrapper
     {
