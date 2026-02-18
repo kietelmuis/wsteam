@@ -23,7 +23,7 @@ public class DownloadManager(
     private readonly SteamPicsClient picsClient = picsClient;
     private readonly DepotKeyProvider depotKeyProvider = depotKeyProvider;
 
-    private class ManifestWrapper
+    internal class ManifestWrapper
     {
         public required DepotManifest Manifest;
         public byte[]? DepotKey;
@@ -34,15 +34,16 @@ public class DownloadManager(
     {
         await steamSession.WaitLoggedOnAsync();
 
-        var game = await picsClient.GetInfoAsync(appId);
+        var game = await picsClient.GetAppInfoAsync(appId);
 
-        var app = game.data.First().Value;
-        var depots = app.depots.DepotObjects.ToList();
+        Console.WriteLine($"Found app {game.AppId}");
 
-        Console.WriteLine($"downloading game {app.config.installdir}");
+        var depots = game.Depots.Depots.ToList();
+
+        Console.WriteLine($"downloading game {game.Config.InstallDir}");
         Console.WriteLine($"found {depots.Count()} depots");
 
-        var gameDirectory = Path.Combine(path, app.config.installdir);
+        var gameDirectory = Path.Combine(path, game.Config.InstallDir);
         Directory.CreateDirectory(gameDirectory);
 
         var cdnServer = (await steamSession.SteamContent.GetServersForSteamPipe())
@@ -55,10 +56,11 @@ public class DownloadManager(
 
         var manifestDownloadTasks = depots.Select(async depot =>
         {
-            if (depot.Value.manifests is null) return null;
+            var publicManifest = depot.Value.Manifests["public"];
+            if (publicManifest is null) return null;
 
             var depotId = uint.Parse(depot.Key);
-            var manifestId = ulong.Parse(depot.Value.manifests.@public.gid);
+            var manifestId = ulong.Parse(publicManifest.Gid);
 
             var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
             if (manifest is null) return null;

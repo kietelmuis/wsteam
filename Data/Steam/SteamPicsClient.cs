@@ -10,6 +10,9 @@ using static SteamKit2.SteamApps;
 
 namespace wsteam.Data.Steam;
 
+/// <summary>
+/// Steam Product Information Control System
+/// </summary>
 public class SteamPicsClient(SteamSession steamSession)
 {
     private readonly SteamApps steamApps = steamSession.SteamApps;
@@ -30,24 +33,37 @@ public class SteamPicsClient(SteamSession steamSession)
     /// <summary>
     /// Request product information for an app or package.
     /// </summary>
-    public async Task<SteamInfo> GetInfoAsync(uint appId)
+    public async Task<SteamApp> GetAppInfoAsync(uint appId)
     {
         var accessToken = await GetAccessTokenAsync(appId)
             ?? throw new Exception($"Failed to get PICS accessToken for app {appId}");
 
-        var data = await steamApps.PICSGetProductInfo(new PICSRequest(appId, accessToken), null);
-        data.Results?.First().Apps.First().Value.KeyValues.SaveToFile("./app.vdf", false);
+        var picsRequest = new PICSRequest(appId, accessToken);
+        var data = await steamApps.PICSGetProductInfo(picsRequest, null);
+        if (data.Failed)
+            throw new Exception("Failed to get PICS data");
+
+        if (data.Results == null || data.Results.Count() == 0)
+            throw new Exception("No results found");
+
+        var firstResult = data.Results.First();
+        if (firstResult.Apps.Count() == 0)
+            throw new Exception("No app results found");
+
+        var firstApp = firstResult.Apps.First();
+        var appVdf = firstApp.Value.KeyValues;
 
         using var vdfStream = new MemoryStream();
-        data.Results?.First().Apps.First().Value.KeyValues.SaveToStream(vdfStream, false);
+        appVdf.SaveToFile("./app.vdf", false);
 
+        appVdf.SaveToStream(vdfStream, false);
         vdfStream.Position = 0;
 
         var vdf = VdfConvert.Deserialize(new StreamReader(vdfStream));
         var vdfJson = vdf.ToJson().First();
         Console.WriteLine(vdfJson);
 
-        return vdfJson.ToObject<SteamInfo>()
+        return vdfJson.ToObject<SteamApp>()
             ?? throw new Exception("Failed to deserialize Steam PICS response");
     }
 }

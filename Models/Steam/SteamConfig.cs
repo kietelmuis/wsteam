@@ -2,5 +2,5 @@ namespace wsteam.Models.Steam;
 
 public class SteamConfig
 {
-    public required string installdir { get; set; }
+    public required string InstallDir { get; set; }
 }
