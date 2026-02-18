@@ -2,8 +2,10 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
-using wsteam.Data.APIs;
-using wsteam.Data.Download;
+using wsteam.Data.Downloads;
+using wsteam.Data.Manifests;
+using wsteam.Data.Singletons;
+using wsteam.Data.Steam;
 
 namespace wsteam;
 
@@ -17,12 +19,14 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         var services = new ServiceCollection();
-        services.AddHttpClient<ILuaApi, KernelManifestApi>();
-        services.AddHttpClient<IManifestApi, ManifestHubApi>();
-        services.AddHttpClient<SteamCMDApi>();
+        services.AddHttpClient<SteamManifestApi>();
 
-        services.AddSingleton<KernelManifestApi>();
-        services.AddSingleton<SteamCMDApi>();
+        services.AddSingleton<ILuaApi>(sp =>
+            sp.GetRequiredService<SteamManifestApi>());
+        services.AddSingleton<IManifestApi>(sp =>
+            sp.GetRequiredService<SteamManifestApi>());
+
+        services.AddSingleton<SteamPicsClient>();
         services.AddSingleton<DepotKeyProvider>();
         services.AddSingleton<DownloadManager>();
         services.AddSingleton<SteamSession>();

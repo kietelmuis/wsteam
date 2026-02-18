@@ -1,4 +1,4 @@
-namespace wsteam.Data.APIs;
+namespace wsteam.Data.Manifests;
 
 using System;
 using System.Collections.Generic;
@@ -14,16 +14,18 @@ using SteamKit2;
 public class ManifestHubApi(HttpClient httpClient) : IManifestApi
 {
     private readonly HttpClient httpClient = httpClient;
-    private readonly string apiKey = Environment.GetEnvironmentVariable("MANIFEST_API_KEY")
-            ?? throw new InvalidOperationException("No manifest api key");
-    private const int maxRetries = 5;
 
-    private readonly SemaphoreSlim semaphoreSlim = new(1);
+    private readonly string apiKey =
+        Environment.GetEnvironmentVariable("MANIFEST_API_KEY")
+        ?? throw new InvalidOperationException("No manifest api key");
 
-    public async Task<DepotManifest?> GetManifestAsync(uint depotId, ulong manifestId)
+    private const int MaxRetries = 5;
+
+    private readonly SemaphoreSlim semaphoreSlim = new(1, 1);
+
+    public async Task<DepotManifest?> GetManifestAsync(uint appId, uint depotId, ulong manifestId)
     {
         await semaphoreSlim.WaitAsync();
-
         try
         {
             var query = new Dictionary<string, string?>
@@ -38,9 +40,9 @@ public class ManifestHubApi(HttpClient httpClient) : IManifestApi
                 query
             );
 
-            for (int attempt = 0; attempt < maxRetries; attempt++)
+            for (int attempt = 0; attempt < MaxRetries; attempt++)
             {
-                var response = await httpClient.GetAsync(url);
+                using var response = await httpClient.GetAsync(url);
                 if (!response.IsSuccessStatusCode)
                 {
                     if (response.StatusCode == HttpStatusCode.Forbidden)
@@ -60,7 +62,7 @@ public class ManifestHubApi(HttpClient httpClient) : IManifestApi
             }
 
             Console.WriteLine(url);
-            Console.WriteLine($"failed to download depot {depotId} after {maxRetries} tries");
+            Console.WriteLine($"failed to download depot {depotId} after {MaxRetries} tries");
             return null;
         }
         finally

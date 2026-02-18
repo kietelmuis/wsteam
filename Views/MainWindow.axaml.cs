@@ -1,8 +1,6 @@
 using System;
-using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using wsteam.Data.Download;
 
 namespace wsteam;
 

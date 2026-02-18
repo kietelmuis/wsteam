@@ -5,15 +5,18 @@ using System.Threading.Tasks;
 using Gameloop.Vdf;
 using Gameloop.Vdf.JsonConverter;
 using SteamKit2;
-using wsteam.Models.SteamCMD;
+using wsteam.Models.Steam;
 using static SteamKit2.SteamApps;
 
-namespace wsteam.Data.Download;
+namespace wsteam.Data.Steam;
 
-public class SteamPicsClient(SteamApps steamApps)
+public class SteamPicsClient(SteamSession steamSession)
 {
-    private readonly SteamApps steamApps = steamApps;
+    private readonly SteamApps steamApps = steamSession.SteamApps;
 
+    /// <summary>
+    /// Request PICS access tokens for an app or package.
+    /// </summary>
     private async Task<ulong?> GetAccessTokenAsync(uint appId)
     {
         var accessTokens = await steamApps.PICSGetAccessTokens(appId, null);
@@ -24,7 +27,10 @@ public class SteamPicsClient(SteamApps steamApps)
             null;
     }
 
-    public async Task GetAppDataAsync(uint appId)
+    /// <summary>
+    /// Request product information for an app or package.
+    /// </summary>
+    public async Task<SteamInfo> GetInfoAsync(uint appId)
     {
         var accessToken = await GetAccessTokenAsync(appId)
             ?? throw new Exception($"Failed to get PICS accessToken for app {appId}");
@@ -40,6 +46,8 @@ public class SteamPicsClient(SteamApps steamApps)
         var vdf = VdfConvert.Deserialize(new StreamReader(vdfStream));
         var vdfJson = vdf.ToJson().First();
         Console.WriteLine(vdfJson);
-        var appModel = vdfJson.ToObject<SteamInfo>();
+
+        return vdfJson.ToObject<SteamInfo>()
+            ?? throw new Exception("Failed to deserialize Steam PICS response");
     }
 }

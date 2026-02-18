@@ -1,4 +1,4 @@
-namespace wsteam.Models.SteamCMD;
+namespace wsteam.Models.Steam;
 
 public class SteamConfig
 {

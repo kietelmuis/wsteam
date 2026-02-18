@@ -1,4 +1,4 @@
-namespace wsteam.Data.APIs;
+namespace wsteam.Data.Manifests;
 
 using System;
 using System.IO;
@@ -8,7 +8,6 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
-using SteamKit2;
 
 public class KernelManifestApi : ILuaApi
 {
@@ -23,7 +22,7 @@ public class KernelManifestApi : ILuaApi
 
     public async Task<string?> GetLuaAsync(uint appId)
     {
-        var downloadResponse = await httpClient.GetAsync($"games/download.php?gen=1&id={appId}");
+        using var downloadResponse = await httpClient.GetAsync($"games/download.php?gen=1&id={appId}");
         var jsonResponse = await downloadResponse.Content.ReadFromJsonAsync<JsonElement>();
 
         if (!downloadResponse.IsSuccessStatusCode)
@@ -34,7 +33,7 @@ public class KernelManifestApi : ILuaApi
         }
 
         var url = jsonResponse.GetProperty("url").ToString();
-        var manifestResponse = await httpClient.GetAsync(url);
+        using var manifestResponse = await httpClient.GetAsync(url);
 
         if (!manifestResponse.IsSuccessStatusCode)
         {

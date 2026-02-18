@@ -1,13 +1,13 @@
 using System;
 using System.Threading.Tasks;
 using SteamKit2;
-using wsteam.Data.Download;
 
 public class SteamSession
 {
     public readonly SteamClient SteamClient;
     public readonly SteamUser SteamUser;
     public SteamContent SteamContent;
+    public SteamApps SteamApps;
 
     public readonly CallbackManager callbackManager;
 
@@ -20,10 +20,9 @@ public class SteamSession
             ?? throw new InvalidOperationException("SteamUser handler not found");
         this.SteamContent = this.SteamClient.GetHandler<SteamContent>()
             ?? throw new InvalidOperationException("SteamContent handler not found");
-        var SteamApps = this.SteamClient.GetHandler<SteamApps>()
+        this.SteamApps = this.SteamClient.GetHandler<SteamApps>()
             ?? throw new InvalidOperationException("SteamApps handler not found");
         this.callbackManager = new CallbackManager(SteamClient);
-        var _ = new SteamPicsClient(SteamApps).GetAppDataAsync(4164420);
 
         callbackManager.Subscribe<SteamClient.ConnectedCallback>(_ =>
         {

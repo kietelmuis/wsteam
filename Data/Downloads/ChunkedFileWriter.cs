@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 using SteamKit2;
 
-namespace wsteam.Data.Download;
+namespace wsteam.Data.Downloads;
 
 public class ChunkedFileWriter : IDisposable
 {

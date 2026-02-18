@@ -1,16 +1,17 @@
 using System.IO;
 using System.Threading.Tasks;
-using wsteam.Data.APIs;
-using wsteam.Data.Download;
+using wsteam.Data.Downloads;
+using wsteam.Data.Manifests;
+using wsteam.Data.Steam;
 
 public partial class MainViewModel(
     SteamSession steamSession,
     IManifestApi manifestApi,
-    SteamCMDApi steamCMDApi,
+    SteamPicsClient picsClient,
     DepotKeyProvider depotKeyProvider) : ViewModelBase
 {
     private readonly DownloadManager downloadManager =
-        new(steamSession, manifestApi, steamCMDApi, depotKeyProvider);
+        new(steamSession, manifestApi, picsClient, depotKeyProvider);
 
     private readonly string downloadDirectory = Path.Combine(Directory.GetCurrentDirectory(), "games");
 

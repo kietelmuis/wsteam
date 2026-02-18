@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Lua;
 
-namespace wsteam.Data.Download;
+namespace wsteam.Data.Downloads;
 
 public class DepotKeyProvider
 {

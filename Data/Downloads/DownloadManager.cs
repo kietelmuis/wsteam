@@ -6,22 +6,23 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.CDN;
-using wsteam.Data.APIs;
+using wsteam.Data.Manifests;
+using wsteam.Data.Steam;
 
-namespace wsteam.Data.Download;
+namespace wsteam.Data.Downloads;
 
 public class DownloadManager
 {
     private SteamSession steamSession;
     private IManifestApi manifestApi;
-    private SteamCMDApi steamCMDApi;
+    private SteamPicsClient picsClient;
     private DepotKeyProvider depotKeyProvider;
 
-    public DownloadManager(SteamSession steamSession, IManifestApi manifestApi, SteamCMDApi steamCMDApi, DepotKeyProvider depotKeyProvider)
+    public DownloadManager(SteamSession steamSession, IManifestApi manifestApi, SteamPicsClient picsClient, DepotKeyProvider depotKeyProvider)
     {
         this.steamSession = steamSession;
         this.manifestApi = manifestApi;
-        this.steamCMDApi = steamCMDApi;
+        this.picsClient = picsClient;
         this.depotKeyProvider = depotKeyProvider;
     }
 
@@ -36,13 +37,15 @@ public class DownloadManager
     {
         await steamSession.WaitLoggedOnAsync();
 
-        var game = await steamCMDApi.GetInfoAsync(appId);
-        var depots = game.depots.DepotObjects.ToList();
+        var game = await picsClient.GetInfoAsync(appId);
 
-        Console.WriteLine($"downloading game {game.config.installdir}");
+        var app = game.data.First().Value;
+        var depots = app.depots.DepotObjects.ToList();
+
+        Console.WriteLine($"downloading game {app.config.installdir}");
         Console.WriteLine($"found {depots.Count()} depots");
 
-        var gameDirectory = Path.Combine(path, game.config.installdir);
+        var gameDirectory = Path.Combine(path, app.config.installdir);
         Directory.CreateDirectory(gameDirectory);
 
         var cdnServer = (await steamSession.SteamContent.GetServersForSteamPipe())
@@ -60,7 +63,7 @@ public class DownloadManager
             var depotId = uint.Parse(depot.Key);
             var manifestId = ulong.Parse(depot.Value.manifests.@public.gid);
 
-            var manifest = await manifestApi.GetManifestAsync(depotId, manifestId);
+            var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
             if (manifest is null) return null;
 
             var wrappedManifest = new ManifestWrapper

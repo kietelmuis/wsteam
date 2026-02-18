@@ -3,7 +3,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace wsteam.Models.SteamCMD;
+namespace wsteam.Models.Steam;
 
 public class SteamApp
 {
