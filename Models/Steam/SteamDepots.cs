@@ -1,19 +1,28 @@
 using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Linq;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace wsteam.Models.Steam;
 
 public class SteamDepots
 {
-    [JsonPropertyName("baselanguages")]
+    [JsonProperty("baselanguages")]
     public string? BaseLanguages { get; set; }
 
-    [JsonPropertyName("branches")]
+    [JsonProperty("branches")]
     public Dictionary<string, Branch>? Branches { get; set; }
 
     [JsonExtensionData]
-    public Dictionary<string, JsonElement>? RawDepots { get; set; }
+    public Dictionary<string, JToken>? RawDepots { get; set; }
+
+    [JsonIgnore]
+    public Dictionary<string, Depot> Depots => RawDepots?
+        .Where(kvp => long.TryParse(kvp.Key, out _))
+        .ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.ToObject<Depot>()!
+        ) ?? [];
 }
 
 public class DepotConfig
