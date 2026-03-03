@@ -38,7 +38,8 @@ public class DownloadManager(
 
         Console.WriteLine($"Found app {game.AppId}");
 
-        var depots = game.Depots.Depots.ToList();
+        var depots = game.Depots.Depots.ToList()
+            .Where(d => (d.Value.Config.Language ?? "english") == "english");
 
         Console.WriteLine($"downloading game {game.Config.InstallDir}");
         Console.WriteLine($"found {depots.Count()} depots");

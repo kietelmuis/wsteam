@@ -69,7 +69,7 @@ public sealed class SteamManifestApi : ILuaApi, IManifestApi
         if (zip is null) return null;
 
         var luaEntry =
-            zip.Entries.First(e => e.Name.Contains("lua"));
+            zip.Entries.FirstOrDefault(e => e.Name.Contains("lua")) ?? throw new Exception("Lua not found in zip");
 
         if (luaEntry is null)
         {
@@ -89,16 +89,10 @@ public sealed class SteamManifestApi : ILuaApi, IManifestApi
         if (zip is null) return null;
 
         var entry =
-            zip.Entries.First(e =>
+            zip.Entries.FirstOrDefault(e =>
                 e.Name.Contains("manifest") &&
                 e.Name.Contains(manifestId.ToString())
-            );
-
-        if (entry is null)
-        {
-            Console.WriteLine($"SteamManifest: no manifest entry found in app {appId} zip (depot {depotId}, manifest {manifestId})");
-            return null;
-        }
+            ) ?? throw new Exception("Manifest was not found in zip");
 
         try
         {

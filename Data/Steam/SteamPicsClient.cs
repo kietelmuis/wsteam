@@ -43,7 +43,7 @@ public class SteamPicsClient(SteamSession steamSession)
         if (data.Failed)
             throw new Exception("Failed to get PICS data");
 
-        if (data.Results == null || data.Results.Count() == 0)
+        if (data.Results is null || data.Results.Count() == 0)
             throw new Exception("No results found");
 
         var firstResult = data.Results.First();
@@ -54,14 +54,14 @@ public class SteamPicsClient(SteamSession steamSession)
         var appVdf = firstApp.Value.KeyValues;
 
         using var vdfStream = new MemoryStream();
-        appVdf.SaveToFile("./app.vdf", false);
-
         appVdf.SaveToStream(vdfStream, false);
         vdfStream.Position = 0;
 
         var vdf = VdfConvert.Deserialize(new StreamReader(vdfStream));
-        var vdfJson = vdf.ToJson().First();
-        Console.WriteLine(vdfJson);
+        var vdfJson = vdf.ToJson().FirstOrDefault() ?? throw new Exception("The app could not be found in the Steam result");
+
+        using StreamWriter writer = new("./app.json");
+        await writer.WriteAsync(vdfJson.ToString());
 
         return vdfJson.ToObject<SteamApp>()
             ?? throw new Exception("Failed to deserialize Steam PICS response");

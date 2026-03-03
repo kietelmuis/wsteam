@@ -25,7 +25,7 @@ public partial class MainWindow : Window
         addGameButton?.Click += async (o, r) =>
         {
             Console.WriteLine("Clicked");
-            await mainView!.DownloadAsync(4164420);
+            await mainView!.DownloadAsync(311210);
         };
         gamesButton?.Click += OnNavigationClick;
         sourcesButton?.Click += OnNavigationClick;

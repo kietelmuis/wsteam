@@ -27,9 +27,9 @@ public class SteamDepots
 
 public class DepotConfig
 {
-    public required string Language { get; set; }
-    public required string OsList { get; set; }
-    public required string OsArch { get; set; }
+    public required string? Language { get; set; }
+    public required string? OsList { get; set; }
+    public required string? OsArch { get; set; }
 }
 
 public class Manifest
