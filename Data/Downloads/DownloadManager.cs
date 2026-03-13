@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading;
 using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.CDN;
@@ -74,21 +75,13 @@ public class DownloadManager(
         var manifestDownloadTasks = depots.Select(async depot =>
         {
             var publicManifest = depot.Value.Manifests["public"];
-            if (publicManifest is null)
-            {
-                Console.WriteLine($"no public manifest for depot {depot.Key}");
-                return null;
-            }
+            if (publicManifest is null) return null;
 
             var depotId = uint.Parse(depot.Key);
             var manifestId = ulong.Parse(publicManifest.Gid);
 
             var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
-            if (manifest is null)
-            {
-                Console.WriteLine($"no manifest for depot {depot.Key}, manifest {manifestId}");
-                return null;
-            }
+            if (manifest is null) return null;
 
             var wrappedManifest = new ManifestWrapper
             {
@@ -115,6 +108,7 @@ public class DownloadManager(
                 wrappedManifest.DepotKey = depotKey;
             }
 
+            Console.WriteLine($"successfully downloaded depot {depot.Key}");
             return wrappedManifest;
         });
 
