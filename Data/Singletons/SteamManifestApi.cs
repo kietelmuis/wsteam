@@ -5,29 +5,28 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
-using System.Runtime.Caching;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Memory;
 using SteamKit2;
 using wsteam.Data.Manifests;
 
 public sealed class SteamManifestApi : ILuaApi, IManifestApi
 {
     private readonly HttpClient httpClient;
+    private readonly IMemoryCache memoryCache;
 
-    private readonly MemoryCache zipCache = new("sm-zip");
-    private static readonly TimeSpan ZipCacheTtl = TimeSpan.FromMinutes(30);
-
-    public SteamManifestApi(HttpClient httpClient)
+    public SteamManifestApi(HttpClient httpClient, IMemoryCache memoryCache)
     {
         httpClient.BaseAddress = new Uri("https://steammanifest.com/");
         this.httpClient = httpClient;
+        this.memoryCache = memoryCache;
     }
 
     private async Task<byte[]?> GetZipBytesAsync(uint appId)
     {
         var key = appId.ToString();
 
-        if (zipCache.Get(key) is byte[] cached)
+        if (memoryCache.Get(key) is byte[] cached)
             return cached;
 
         var zipResponse = await httpClient.GetAsync(
@@ -42,13 +41,9 @@ public sealed class SteamManifestApi : ILuaApi, IManifestApi
 
         var zipBytes = await zipResponse.Content.ReadAsByteArrayAsync();
 
-        zipCache.Set(
+        memoryCache.Set(
             key,
-            zipBytes,
-            new CacheItemPolicy
-            {
-                AbsoluteExpiration = DateTimeOffset.UtcNow.Add(ZipCacheTtl),
-            }
+            zipBytes
         );
 
         return zipBytes;
@@ -92,7 +87,7 @@ public sealed class SteamManifestApi : ILuaApi, IManifestApi
             zip.Entries.FirstOrDefault(e =>
                 e.Name.Contains("manifest") &&
                 e.Name.Contains(manifestId.ToString())
-            ) ?? throw new Exception("Manifest was not found in zip");
+            ) ?? throw new Exception($"Manifest {manifestId} (depot {depotId}) was not found in zip");
 
         try
         {
