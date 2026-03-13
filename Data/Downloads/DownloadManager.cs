@@ -224,12 +224,23 @@ public class DownloadManager(
 
     private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[]? depotKey, ChunkedFileWriter writer, Client cdnClient, Server cdnServer)
     {
-        var length = checked((int)chunk.UncompressedLength);
-        byte[] buffer = new byte[length];
+        try
+        {
+            var length = depotKey == null
+                ? checked((int)chunk.CompressedLength)
+                : checked((int)chunk.UncompressedLength);
 
-        var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
-        await writer.WriteChunkAsync(chunk, buffer);
+            byte[] buffer = new byte[length];
 
-        Console.WriteLine($"[depot {depotId}] written {bytes} bytes");
+            var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
+            await writer.WriteChunkAsync(chunk, buffer);
+
+            Interlocked.Add(ref byteAccumulator, bytes);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[file {currentFileName}] error downloading chunk: {ex}");
+            await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer);
+        }
     }
 }
