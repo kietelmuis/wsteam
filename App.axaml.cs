@@ -1,3 +1,4 @@
+using System.Xml.Serialization;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -19,12 +20,13 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         var services = new ServiceCollection();
-        services.AddHttpClient<SteamManifestApi>();
+        services.AddMemoryCache();
 
-        services.AddSingleton<ILuaApi>(sp =>
-            sp.GetRequiredService<SteamManifestApi>());
-        services.AddSingleton<IManifestApi>(sp =>
-            sp.GetRequiredService<SteamManifestApi>());
+        services.AddHttpClient<KernelManifestApi>();
+        services.AddHttpClient<GithubApi>();
+
+        services.AddSingleton<ILuaApi, KernelManifestApi>();
+        services.AddSingleton<IManifestApi, GithubApi>();
 
         services.AddSingleton<SteamPicsClient>();
         services.AddSingleton<DepotKeyProvider>();
