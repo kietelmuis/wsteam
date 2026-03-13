@@ -23,6 +23,11 @@ public class DownloadManager(
     private readonly SteamPicsClient picsClient = picsClient;
     private readonly DepotKeyProvider depotKeyProvider = depotKeyProvider;
 
+    static readonly int[] Redistributables = [
+        228983, // VC 2010 Redist
+        228990 // DirectX Jun 2010 Redist
+    ];
+
     internal class ManifestWrapper
     {
         public required DepotManifest Manifest;
@@ -39,7 +44,12 @@ public class DownloadManager(
         Console.WriteLine($"Found app {game.AppId}");
 
         var depots = game.Depots.Depots.ToList()
-            .Where(d => (d.Value.Config.Language ?? "english") == "english");
+            .Where(d => !Redistributables.Contains(int.Parse(d.Key)))
+            .Where(d => (d.Value.Config.OsList ?? "windows").Contains("windows"))
+            .Where(d => (d.Value.Config.Language ?? "english") == "english")
+            .ToList();
+
+        depots.ForEach(d => Console.WriteLine($"[{d.Key}] dlc:{d.Value.Dlcappid.ToString() ?? "null"} os:{d.Value.Config.OsList}"));
 
         Console.WriteLine($"downloading game {game.Config.InstallDir}");
         Console.WriteLine($"found {depots.Count()} depots");

@@ -41,6 +41,7 @@ public class Manifest
 
 public class Depot
 {
+    public int? Dlcappid { get; set; }
     public required DepotConfig Config { get; set; }
     public required Dictionary<string, Manifest> Manifests { get; set; }
 }
