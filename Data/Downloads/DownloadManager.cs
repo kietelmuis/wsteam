@@ -68,13 +68,21 @@ public class DownloadManager(
         var manifestDownloadTasks = depots.Select(async depot =>
         {
             var publicManifest = depot.Value.Manifests["public"];
-            if (publicManifest is null) return null;
+            if (publicManifest is null)
+            {
+                Console.WriteLine($"no public manifest for depot {depot.Key}");
+                return null;
+            }
 
             var depotId = uint.Parse(depot.Key);
             var manifestId = ulong.Parse(publicManifest.Gid);
 
             var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
-            if (manifest is null) return null;
+            if (manifest is null)
+            {
+                Console.WriteLine($"no manifest for depot {depot.Key}, manifest {manifestId}");
+                return null;
+            }
 
             var wrappedManifest = new ManifestWrapper
             {
@@ -85,10 +93,18 @@ public class DownloadManager(
             if (manifest.FilenamesEncrypted)
             {
                 var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
-                if (depotKey is null) return null;
+                if (depotKey is null)
+                {
+                    Console.WriteLine($"no depot key for depot {depot.Key}");
+                    return null;
+                }
 
                 var result = manifest.DecryptFilenames(depotKey);
-                if (!result) return null;
+                if (!result)
+                {
+                    Console.WriteLine($"failed to decrypt filenames for depot {depot.Key}");
+                    return null;
+                }
 
                 wrappedManifest.DepotKey = depotKey;
             }
