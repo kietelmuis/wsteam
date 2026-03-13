@@ -173,13 +173,26 @@ public class DownloadManager(
 
         if (File.Exists(filePath))
         {
-            using var fileStream = new FileStream(filePath, FileMode.Open);
-            var fileHash = await SHA1.HashDataAsync(fileStream);
-
-            if (Enumerable.SequenceEqual(file.FileHash, fileHash))
+            try
             {
-                Console.WriteLine($"[file {fileName}] file verified");
-                return;
+                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                var fileHash = await SHA1.HashDataAsync(fileStream);
+
+                if (file.FileHash.SequenceEqual(fileHash))
+                {
+                    Console.WriteLine($"[file {fileName}] file verified");
+                    return;
+                }
+                else
+                {
+                    Console.WriteLine($"[file {fileName}] hash mismatch, re-downloading");
+                    File.Delete(filePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[file {fileName}] verification failed: {ex.Message}, re-downloading");
+                try { File.Delete(filePath); } catch { }
             }
         }
 
