@@ -23,6 +23,12 @@ public class DownloadManager(
     private readonly SteamPicsClient picsClient = picsClient;
     private readonly DepotKeyProvider depotKeyProvider = depotKeyProvider;
 
+    private readonly System.Timers.Timer speedTimer = new();
+
+    private string? currentFileName;
+    private int byteAccumulator = 0;
+    private float appSize = 0;
+
     static readonly int[] Redistributables = [
         228983, // VC 2010 Redist
         228990 // DirectX Jun 2010 Redist
@@ -118,8 +124,21 @@ public class DownloadManager(
             .ToList()
             .Cast<ManifestWrapper>();
 
-        Console.WriteLine($"downloading {manifestFiles.Count()} manifests from {cdnServer.Host}");
-        await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServer);
+        if (manifestFiles.Any())
+        {
+            speedTimer.Interval = 1000;
+            speedTimer.Elapsed += (sender, e) =>
+            {
+                Console.WriteLine($"current file: {currentFileName}");
+                Console.WriteLine($"speed: {byteAccumulator / 1024.0 / 1024.0:F2} MB/s");
+                Console.WriteLine($"progress: {byteAccumulator / (float)appSize * 100:F2}%");
+                byteAccumulator = 0;
+            };
+            speedTimer.Start();
+
+            Console.WriteLine($"downloading {manifestFiles.Count()} manifests from {cdnServer.Host}");
+            await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServer);
+        }
 
         Console.WriteLine("Download finished!");
     }
@@ -132,6 +151,8 @@ public class DownloadManager(
             var depotName = $"depot {manifest.DepotID}";
 
             if (manifest.Files is null) continue;
+
+            appSize = manifest.Files.Sum(m => (float)m.TotalSize);
 
             Console.WriteLine($"[app {appId}] downloading {depotName} of {manifest.TotalUncompressedSize}");
 
@@ -147,6 +168,8 @@ public class DownloadManager(
     {
         var fileName = Path.GetFileName(file.FileName);
         var filePath = Path.Combine(gameDirectory, file.FileName);
+
+        currentFileName = fileName;
 
         if (File.Exists(filePath))
         {
