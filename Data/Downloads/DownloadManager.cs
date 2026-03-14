@@ -30,6 +30,9 @@ public class DownloadManager(
     private int byteAccumulator = 0;
     private float appSize = 0;
 
+    private const int MaxRetries = 3;
+    private const int RetryDelayMs = 1000;
+
     static readonly int[] Redistributables = [
         228983, // VC 2010 Redist
         228990 // DirectX Jun 2010 Redist
@@ -233,8 +236,16 @@ public class DownloadManager(
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[file {currentFileName}] error downloading chunk: {ex}");
-            await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer);
+            if (retryCount >= MaxRetries)
+            {
+                Console.WriteLine($"[file {currentFileName}] error downloading chunk after {MaxRetries} retries: {ex}");
+                throw;
+            }
+
+            Console.WriteLine($"[file {currentFileName}] error downloading chunk: {ex.Message}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries})");
+
+            await Task.Delay(RetryDelayMs);
+            await DownloadChunkWithRetryAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer, retryCount + 1);
         }
     }
 }
