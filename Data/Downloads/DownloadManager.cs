@@ -46,6 +46,12 @@ public class DownloadManager(
         public required uint DepotId;
     }
 
+    private byte[] RentBuffer(int length)
+        => ArrayPool<byte>.Shared.Rent(length);
+
+    private void ReturnBuffer(byte[] buffer)
+        => ArrayPool<byte>.Shared.Return(buffer);
+
     public async Task DownloadAppAsync(uint appId, string path)
     {
         await steamSession.WaitLoggedOnAsync();
@@ -226,16 +232,22 @@ public class DownloadManager(
         {
             retryCount = 0;
 
-            var length = depotKey == null
+            var length = depotKey is null
                 ? checked((int)chunk.CompressedLength)
                 : checked((int)chunk.UncompressedLength);
 
-            byte[] buffer = new byte[length];
+            byte[] buffer = RentBuffer(length);
+            try
+            {
+                var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
+                await writer.WriteChunkAsync(chunk, buffer);
 
-            var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
-            await writer.WriteChunkAsync(chunk, buffer);
-
-            Interlocked.Add(ref byteAccumulator, bytes);
+                Interlocked.Add(ref byteAccumulator, bytes);
+            }
+            finally
+            {
+                ReturnBuffer(buffer);
+            }
         }
         catch (Exception ex)
         {
