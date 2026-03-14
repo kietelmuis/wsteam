@@ -29,6 +29,7 @@ public class DownloadManager(
     private string? currentFileName;
     private int byteAccumulator = 0;
     private float appSize = 0;
+    private int retryCount = 0;
 
     private const int MaxRetries = 3;
     private const int RetryDelayMs = 1000;
@@ -223,6 +224,8 @@ public class DownloadManager(
     {
         try
         {
+            retryCount = 0;
+
             var length = depotKey == null
                 ? checked((int)chunk.CompressedLength)
                 : checked((int)chunk.UncompressedLength);
@@ -245,7 +248,9 @@ public class DownloadManager(
             Console.WriteLine($"[file {currentFileName}] error downloading chunk: {ex.Message}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries})");
 
             await Task.Delay(RetryDelayMs);
-            await DownloadChunkWithRetryAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer, retryCount + 1);
+            retryCount += 1;
+
+            await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer);
         }
     }
 }
