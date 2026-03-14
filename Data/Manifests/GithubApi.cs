@@ -1,23 +1,25 @@
 namespace wsteam.Data.Manifests;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
 using SteamKit2;
-using wsteam.Models.Github;
 
 public class GithubApi : IManifestApi
 {
     private HttpClient httpClient;
     private IMemoryCache memoryCache;
+    private readonly ConcurrentDictionary<uint, Lazy<Task<DepotManifest?[]>>> _manifestLoads = new();
 
     public GithubApi(HttpClient httpClient, IMemoryCache memoryCache)
     {
-        httpClient.BaseAddress = new Uri("https://api.github.com/repos/SteamAutoCracks/ManifestHub/");
+        httpClient.BaseAddress = new Uri("https://codeload.github.com/SteamAutoCracks/ManifestHub/zip/refs/heads/");
         httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0");
 
         this.httpClient = httpClient;
@@ -26,43 +28,48 @@ public class GithubApi : IManifestApi
 
     public async Task<DepotManifest?> GetManifestAsync(uint appId, uint depotId, ulong manifestId)
     {
-        if (memoryCache.Get($"{appId}:{depotId}") is DepotManifest manifest)
+        var cacheKey = $"{appId}:{depotId}";
+        if (memoryCache.Get(cacheKey) is DepotManifest manifest)
             return manifest;
-        Console.WriteLine($"Cache miss for {appId}:{depotId}:{manifestId}");
 
+        var lazyTask = _manifestLoads.GetOrAdd(appId,
+            id => new Lazy<Task<DepotManifest?[]>>(() => CacheAllManifestsAsync(id)));
+
+        var manifests = await lazyTask.Value;
+        return manifests.FirstOrDefault(m => m is not null && m.DepotID == depotId);
+    }
+
+    public async Task<DepotManifest?[]> CacheAllManifestsAsync(uint appId)
+    {
         Console.WriteLine($"Getting manifests for app {appId}");
-        var response = await httpClient.GetAsync($"git/trees/{appId}?recursive=1");
+        var response = await httpClient.GetAsync($"{appId}");
         if (!response.IsSuccessStatusCode)
         {
-            Console.WriteLine($"Failed to get manifest tree: {response.StatusCode}");
-            return null;
+            Console.WriteLine($"Failed to get manifest zip: {response.StatusCode}");
+            return [];
         }
 
-        var manifestResponse = await response.Content.ReadFromJsonAsync<ManifestResponse>()
-            ?? throw new Exception("Failed to parse manifest response");
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var zipfile = new ZipArchive(stream, ZipArchiveMode.Read);
 
-        Console.WriteLine($"Found {manifestResponse.Tree.Count} manifest files");
-
-        var manifests = await Task.WhenAll(
-            manifestResponse.Tree
-                .Where(m => m.Path.Contains("manifest"))
-                .ToList()
-                .Select(async m =>
+        return await Task.WhenAll(
+            zipfile.Entries
+                .Where(e => e.Name.Contains("manifest"))
+                .Select(async e =>
                 {
-                    var fileResponse = await httpClient.GetAsync($"https://raw.githubusercontent.com/SteamAutoCracks/ManifestHub/{appId}/{m.Path}");
-                    if (!fileResponse.IsSuccessStatusCode) return null;
+                    try
+                    {
+                        var manifest = DepotManifest.Deserialize(await e.OpenAsync());
+                        memoryCache.Set($"{appId}:{manifest.DepotID}", manifest);
 
-                    var manifest = DepotManifest.Deserialize(await fileResponse.Content.ReadAsByteArrayAsync());
-                    memoryCache.Set($"{appId}:{manifest.DepotID}", manifest);
-
-                    return manifest;
+                        return manifest;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error deserializing {e.Name}: {ex.Message}");
+                        return null;
+                    }
                 })
-        );
-
-        return manifests.FirstOrDefault(m =>
-            m is not null &&
-            m.DepotID == depotId &&
-            m.ManifestGID == manifestId
         );
     }
 }
