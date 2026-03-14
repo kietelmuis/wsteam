@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -118,7 +119,7 @@ public class DownloadManager(
                 wrappedManifest.DepotKey = depotKey;
             }
 
-            Console.WriteLine($"successfully downloaded depot {depot.Key}");
+            Console.WriteLine($"successfully downloaded depot {manifest.DepotID}");
             return wrappedManifest;
         });
 
@@ -128,22 +129,25 @@ public class DownloadManager(
             .ToList()
             .Cast<ManifestWrapper>();
 
-        if (manifestFiles.Any())
+        var manifestCount = manifestFiles.Count();
+        if (manifestCount > 0)
         {
             speedTimer.Interval = 1000;
             speedTimer.Elapsed += (sender, e) =>
             {
-                Console.WriteLine($"current file: {currentFileName}");
-                Console.WriteLine($"speed: {byteAccumulator / 1024.0 / 1024.0:F2} MB/s");
-                Console.WriteLine($"progress: {byteAccumulator / (float)appSize * 100:F2}%");
+                var speedMbps = byteAccumulator / 1024.0 / 1024.0;
+                var progressPercent = appSize > 0 ? byteAccumulator / appSize * 100 : 0;
+
+                Console.WriteLine($"📁 {currentFileName} | 📊 {progressPercent:F1}% | 🚀 {speedMbps:F2} MB/s");
                 byteAccumulator = 0;
             };
             speedTimer.Start();
 
-            Console.WriteLine($"downloading {manifestFiles.Count()} manifests from {cdnServer.Host}");
+            Console.WriteLine($"⬇️  Downloading {manifestCount} manifests from {cdnServer.Host}");
             await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServer);
         }
 
+        Console.WriteLine($"Downloaded {manifestCount} depots");
         Console.WriteLine("Download finished!");
     }
 
