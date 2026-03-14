@@ -1,21 +1,70 @@
-﻿using Avalonia;
-using System;
+﻿using System;
+using System.IO;
+using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
+using Photino.NET;
+using wsteam.Data.Downloads;
+using wsteam.Data.Manifests;
+using wsteam.Data.Steam;
 
 namespace wsteam;
 
 class Program
 {
-    // Initialization code. Don't use any Avalonia, third-party APIs or any
-    // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
-    // yet and stuff might break.
     [STAThread]
-    public static void Main(string[] args) => BuildAvaloniaApp()
-        .StartWithClassicDesktopLifetime(args);
+    public static void Main(string[] args)
+    {
+        var services = new ServiceCollection();
+        services.AddMemoryCache();
 
-    // Avalonia configuration, don't remove; also used by visual designer.
-    public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<App>()
-            .UsePlatformDetect()
-            .WithInterFont()
-            .LogToTrace();
+        services.AddHttpClient<KernelManifestApi>();
+        services.AddHttpClient<GithubApi>();
+
+        services.AddSingleton<ILuaApi, KernelManifestApi>();
+        services.AddSingleton<IManifestApi, GithubApi>();
+
+        services.AddSingleton<SteamPicsClient>();
+        services.AddSingleton<DepotKeyProvider>();
+        services.AddSingleton<DownloadManager>();
+        services.AddSingleton<SteamSession>();
+        var provider = services.BuildServiceProvider();
+
+        var window = new PhotinoWindow()
+            .SetTitle("Steam Downloader")
+            .SetDevToolsEnabled(true)
+            .SetContextMenuEnabled(true)
+            .SetWidth(1200)
+            .SetHeight(700)
+            .SetMinWidth(900)
+            .SetMinHeight(600)
+            .RegisterWebMessageReceivedHandler(async (sender, message) =>
+            {
+                var window = (PhotinoWindow?)sender;
+                if (window is null)
+                    return;
+
+                var appId = uint.Parse(message);
+                var downloadDirectory = Path.Combine(Directory.GetCurrentDirectory(), "games");
+
+                var downloadManager = provider.GetRequiredService<DownloadManager>();
+                downloadManager.SpeedTimer.Elapsed += async (sender, e) =>
+                {
+                    var downloadSpeed = downloadManager.GetDownloadSpeed();
+                    var downloadPercentage = downloadManager.GetDownloadPercentage();
+                    var fileName = downloadManager.GetDownloadFileName();
+
+                    await window.SendWebMessageAsync(JsonConvert.SerializeObject(new
+                    {
+                        speed = downloadSpeed,
+                        percentage = downloadPercentage,
+                        fileName = fileName
+                    }));
+                };
+
+                await downloadManager.DownloadAppAsync(appId, downloadDirectory);
+            })
+            .Load("wwwroot/index.html");
+
+        window.WaitForClose();
+    }
 }

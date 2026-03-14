@@ -25,7 +25,7 @@ public class DownloadManager(
     private readonly SteamPicsClient picsClient = picsClient;
     private readonly DepotKeyProvider depotKeyProvider = depotKeyProvider;
 
-    private readonly System.Timers.Timer speedTimer = new();
+    public readonly System.Timers.Timer SpeedTimer = new();
 
     private string? currentFileName;
     private int byteAccumulator = 0;
@@ -52,6 +52,20 @@ public class DownloadManager(
 
     private void ReturnBuffer(byte[] buffer)
         => ArrayPool<byte>.Shared.Return(buffer);
+
+    public string? GetDownloadFileName() =>
+        currentFileName;
+
+    public float GetDownloadPercentage()
+    {
+        return appSize > 0 ? byteAccumulator / appSize * 100 : 0;
+    }
+
+    public string GetDownloadSpeed()
+    {
+        var speedMbps = byteAccumulator / 1024.0 / 1024.0;
+        return $"{speedMbps:F2} MB/s";
+    }
 
     public async Task DownloadAppAsync(uint appId, string path)
     {
@@ -132,16 +146,16 @@ public class DownloadManager(
         var manifestCount = manifestFiles.Count();
         if (manifestCount > 0)
         {
-            speedTimer.Interval = 1000;
-            speedTimer.Elapsed += (sender, e) =>
+            SpeedTimer.Interval = 1000;
+            SpeedTimer.Elapsed += (sender, e) =>
             {
-                var speedMbps = byteAccumulator / 1024.0 / 1024.0;
-                var progressPercent = appSize > 0 ? byteAccumulator / appSize * 100 : 0;
+                var progressPercent = GetDownloadPercentage();
+                var speedMbps = GetDownloadSpeed();
 
-                Console.WriteLine($"📁 {currentFileName} | 📊 {progressPercent:F1}% | 🚀 {speedMbps:F2} MB/s");
+                Console.WriteLine($"📁 {currentFileName} | 📊 {progressPercent:F1}% | 🚀 {speedMbps}");
                 byteAccumulator = 0;
             };
-            speedTimer.Start();
+            SpeedTimer.Start();
 
             Console.WriteLine($"⬇️  Downloading {manifestCount} manifests from {cdnServer.Host}");
             await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServer);
