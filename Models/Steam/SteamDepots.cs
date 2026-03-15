@@ -27,27 +27,45 @@ public class SteamDepots
 
 public class DepotConfig
 {
-    public required string? Language { get; set; }
-    public required string? OsList { get; set; }
-    public required string? OsArch { get; set; }
+    [JsonProperty("language")]
+    public string? Language { get; set; }
+
+    [JsonProperty("oslist")]
+    public string? OsList { get; set; }
+
+    [JsonProperty("osarch")]
+    public string? OsArch { get; set; }
 }
 
 public class Manifest
 {
+    [JsonProperty("gid")]
     public required string Gid { get; set; }
+
+    [JsonProperty("size")]
     public long Size { get; set; }
+
+    [JsonProperty("download")]
     public long Download { get; set; }
 }
 
 public class Depot
 {
-    public int? Dlcappid { get; set; }
-    public required DepotConfig Config { get; set; }
-    public required Dictionary<string, Manifest> Manifests { get; set; }
+    [JsonProperty("dlcappid")]
+    public int? DlcAppId { get; set; }
+
+    [JsonProperty("config")]
+    public DepotConfig? Config { get; set; }
+
+    [JsonProperty("manifests")]
+    public Dictionary<string, Manifest>? Manifests { get; set; }
 }
 
 public class Branch
 {
+    [JsonProperty("buildid")]
     public required string BuildId { get; set; }
+
+    [JsonProperty("timeupdated")]
     public long TimeUpdated { get; set; }
 }
