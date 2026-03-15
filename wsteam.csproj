@@ -24,4 +24,11 @@
     <PackageReference Include="SteamKit2" Version="3.4.0" />
     <PackageReference Include="System.Runtime.Caching" Version="10.0.3" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="wwwroot\**" />
+    <None Update="wwwroot\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>
