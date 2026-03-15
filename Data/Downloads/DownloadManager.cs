@@ -28,8 +28,11 @@ public class DownloadManager(
     public readonly System.Timers.Timer SpeedTimer = new();
 
     private string? currentFileName;
-    private int byteAccumulator = 0;
-    private float appSize = 0;
+
+    private ulong totalAccumulator = 0;
+    private ulong byteAccumulator = 0;
+    private ulong appSize = 0;
+
     private int retryCount = 0;
 
     private const int MaxRetries = 3;
@@ -56,9 +59,12 @@ public class DownloadManager(
     public string? GetDownloadFileName() =>
         currentFileName;
 
-    public float GetDownloadPercentage()
+    public ulong GetDownloadPercentage()
     {
-        return appSize > 0 ? byteAccumulator / appSize * 100 : 0;
+        if (appSize is 0) return 0;
+
+        var percentage = (double)totalAccumulator / appSize * 100;
+        return (ulong)percentage;
     }
 
     public string GetDownloadSpeed()
@@ -77,11 +83,11 @@ public class DownloadManager(
 
         var depots = game.Depots.Depots.ToList()
             .Where(d => !Redistributables.Contains(int.Parse(d.Key)))
-            .Where(d => (d.Value.Config.OsList ?? "windows").Contains("windows"))
-            .Where(d => (d.Value.Config.Language ?? "english") == "english")
+            .Where(d => (d.Value?.Config?.OsList ?? "windows").Contains("windows"))
+            .Where(d => (d.Value?.Config?.Language ?? "english") == "english")
             .ToList();
 
-        depots.ForEach(d => Console.WriteLine($"[{d.Key}] dlc:{d.Value.Dlcappid.ToString() ?? "null"} os:{d.Value.Config.OsList}"));
+        depots.ForEach(d => Console.WriteLine($"[{d.Key}] dlc:{d.Value.DlcAppId.ToString() ?? "null"} os:{d.Value.Config?.OsList}"));
 
         Console.WriteLine($"downloading game {game.Config.InstallDir}");
         Console.WriteLine($"found {depots.Count()} depots");
@@ -99,6 +105,8 @@ public class DownloadManager(
 
         var manifestDownloadTasks = depots.Select(async depot =>
         {
+            if (depot.Value.Manifests is null) return null;
+
             var publicManifest = depot.Value.Manifests["public"];
             if (publicManifest is null) return null;
 
@@ -163,6 +171,8 @@ public class DownloadManager(
 
         Console.WriteLine($"Downloaded {manifestCount} depots");
         Console.WriteLine("Download finished!");
+
+        SpeedTimer.Dispose();
     }
 
     private async Task DownloadManifestsAsync(IEnumerable<ManifestWrapper> manifestFiles, string gameDirectory, uint appId, Client cdnClient, Server cdnServer)
@@ -174,9 +184,9 @@ public class DownloadManager(
 
             if (manifest.Files is null) continue;
 
-            appSize = manifest.Files.Sum(m => (float)m.TotalSize);
+            appSize = manifest.TotalUncompressedSize;
 
-            Console.WriteLine($"[app {appId}] downloading {depotName} of {manifest.TotalUncompressedSize}");
+            Console.WriteLine($"[app {appId}] downloading {depotName} of {ByteSizeFormatter.FormatBytes(appSize)}");
 
             await Parallel.ForEachAsync(
                 manifest.Files,
@@ -200,7 +210,7 @@ public class DownloadManager(
                 using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
                 var fileHash = await SHA1.HashDataAsync(fileStream);
 
-                if (file.FileHash.SequenceEqual(fileHash))
+                if (fileHash is null || fileHash.Length == 0 || file.FileHash.SequenceEqual(fileHash))
                 {
                     Console.WriteLine($"[file {fileName}] file verified");
                     return;
@@ -260,7 +270,8 @@ public class DownloadManager(
                 var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
                 await writer.WriteChunkAsync(chunk, buffer);
 
-                Interlocked.Add(ref byteAccumulator, bytes);
+                Interlocked.Add(ref byteAccumulator, (ulong)bytes);
+                Interlocked.Add(ref totalAccumulator, (ulong)bytes);
             }
             finally
             {
