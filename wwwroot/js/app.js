@@ -99,6 +99,7 @@ class SteamDownloaderApp {
             appIdInput.focus();
             appIdInput.addEventListener("keypress", (e) => {
                 if (e.key === "Enter") {
+                    appIdInput.disabled = true;
                     this.startDownload();
                 }
             });
@@ -107,9 +108,10 @@ class SteamDownloaderApp {
         // Setup download button if it exists
         const startDownloadBtn = document.getElementById("start-download-btn");
         if (startDownloadBtn) {
-            startDownloadBtn.addEventListener("click", () =>
-                this.startDownload(),
-            );
+            startDownloadBtn.addEventListener("click", () => {
+                startDownloadBtn.disabled = true;
+                this.startDownload();
+            });
         }
     }
 
@@ -186,7 +188,7 @@ class SteamDownloaderApp {
 
     updateProgress(percentage, filename, speed) {
         const progressFill = document.getElementById("progress-fill");
-        if (progressFill) {
+        if (progressFill && percentage !== null) {
             const percent = Math.min(100, percentage || 0);
             progressFill.style.width = percent + "%";
         }

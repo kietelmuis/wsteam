@@ -62,6 +62,13 @@ class Program
                 };
 
                 await downloadManager.DownloadAppAsync(appId, downloadDirectory);
+
+                await window.SendWebMessageAsync(JsonConvert.SerializeObject(new
+                {
+                    speed = "Finished",
+                    percentage = 100,
+                    fileName = ""
+                }));
             })
             .Load("wwwroot/index.html");
 
