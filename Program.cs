@@ -39,6 +39,7 @@ class Program
             .SetMinHeight(600)
             .RegisterWebMessageReceivedHandler(async (sender, message) =>
             {
+                Console.WriteLine(message);
                 var window = (PhotinoWindow?)sender;
                 if (window is null)
                     return;
@@ -47,17 +48,19 @@ class Program
                 var downloadDirectory = Path.Combine(Directory.GetCurrentDirectory(), "games");
 
                 var downloadManager = provider.GetRequiredService<DownloadManager>();
+                var currentApp = downloadManager.GetCurrentApp();
+
                 downloadManager.SpeedTimer.Elapsed += async (sender, e) =>
                 {
                     var downloadSpeed = downloadManager.GetDownloadSpeed();
                     var downloadPercentage = downloadManager.GetDownloadPercentage();
-                    var fileName = downloadManager.GetDownloadFileName();
 
                     await window.SendWebMessageAsync(JsonConvert.SerializeObject(new
                     {
+                        appId = appId,
+                        name = currentApp?.Config.InstallDir,
                         speed = downloadSpeed,
                         percentage = downloadPercentage,
-                        fileName = fileName
                     }));
                 };
 
@@ -65,9 +68,10 @@ class Program
 
                 await window.SendWebMessageAsync(JsonConvert.SerializeObject(new
                 {
+                    appId = appId,
+                    appName = currentApp?.Config.InstallDir,
                     speed = "Finished",
                     percentage = 100,
-                    fileName = ""
                 }));
             })
             .Load("wwwroot/index.html");

@@ -1,4 +1,7 @@
-bin/
-obj/
-games/
+bin
+obj
+games
+wwwroot
+
+node_modules
 app.json

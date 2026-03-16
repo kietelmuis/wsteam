@@ -10,6 +10,7 @@ using SteamKit2;
 using SteamKit2.CDN;
 using wsteam.Data.Manifests;
 using wsteam.Data.Steam;
+using wsteam.Models.Steam;
 
 namespace wsteam.Data.Downloads;
 
@@ -27,6 +28,7 @@ public class DownloadManager(
 
     public readonly System.Timers.Timer SpeedTimer = new();
 
+    private SteamApp? currentApp;
     private string? currentFileName;
 
     private ulong totalAccumulator = 0;
@@ -59,6 +61,9 @@ public class DownloadManager(
     public string? GetDownloadFileName() =>
         currentFileName;
 
+    public SteamApp? GetCurrentApp() =>
+        currentApp;
+
     public ulong GetDownloadPercentage()
     {
         if (appSize is 0) return 0;
@@ -78,6 +83,7 @@ public class DownloadManager(
         await steamSession.WaitLoggedOnAsync();
 
         var game = await picsClient.GetAppInfoAsync(appId);
+        currentApp = game;
 
         Console.WriteLine($"Found app {game.AppId}");
 
@@ -173,6 +179,7 @@ public class DownloadManager(
         Console.WriteLine("Download finished!");
 
         SpeedTimer.Dispose();
+        currentApp = null;
     }
 
     private async Task DownloadManifestsAsync(IEnumerable<ManifestWrapper> manifestFiles, string gameDirectory, uint appId, Client cdnClient, Server cdnServer)
