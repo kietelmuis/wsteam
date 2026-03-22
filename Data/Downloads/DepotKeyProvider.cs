@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Lua;
 
@@ -9,6 +10,7 @@ public class DepotKeyProvider
 {
     private readonly ILuaApi luaApi;
     private readonly LuaState state = LuaState.Create();
+    private readonly SemaphoreSlim semaphore = new(1, 1);
 
     private readonly Dictionary<uint, byte[]> depotKeys = [];
 
@@ -18,13 +20,14 @@ public class DepotKeyProvider
 
         state.Environment["addappid"] = new LuaFunction((context, ct) =>
         {
-            var depotId = context.GetArgument<int>(0);
+            var depotId = (uint)context.GetArgument<int>(0);
             var depotKey = context.HasArgument(2)
-                ? context.GetArgument<string>(2) : null;
+                ? context.GetArgument<string>(2)
+                : null;
 
             if (depotKey is null) return new(0);
 
-            depotKeys[(uint)depotId] = Convert.FromHexString(depotKey);
+            depotKeys[depotId] = Convert.FromHexString(depotKey);
             return new(0);
         });
     }
@@ -34,16 +37,26 @@ public class DepotKeyProvider
         if (depotKeys.TryGetValue(depotId, out var cached))
             return cached;
 
-        var lua = await luaApi.GetLuaAsync(appId)
-            ?? throw new Exception("Could not get lua");
-        await state.DoStringAsync(lua);
-
-        if (!depotKeys.TryGetValue(depotId, out var depotKey))
+        await semaphore.WaitAsync();
+        try
         {
-            Console.WriteLine($"[provider] could not get depotKey for depot {depotId}");
-            return null;
-        }
+            if (depotKeys.TryGetValue(depotId, out var cached2))
+                return cached2;
 
-        return depotKey;
+            var lua = await luaApi.GetLuaAsync(appId)
+                ?? throw new Exception("Could not get lua");
+            await state.DoStringAsync(lua);
+
+            if (!depotKeys.TryGetValue(depotId, out var depotKey))
+            {
+                Console.WriteLine($"[provider] could not get depotKey for depot {depotId}");
+                return null;
+            }
+            return depotKey;
+        }
+        finally
+        {
+            semaphore.Release();
+        }
     }
 }
