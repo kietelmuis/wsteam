@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
@@ -64,7 +64,7 @@ class Program
                     }));
                 };
 
-                await downloadManager.DownloadAppAsync(appId, downloadDirectory);
+                await downloadManager.DownloadAppAsync(appId, downloadDirectory, "windows", []);
 
                 await window.SendWebMessageAsync(JsonConvert.SerializeObject(new
                 {
