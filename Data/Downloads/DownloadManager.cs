@@ -1,6 +1,8 @@
 using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -35,20 +37,18 @@ public class DownloadManager(
     private ulong byteAccumulator = 0;
     private ulong appSize = 0;
 
-    private int retryCount = 0;
-
     private const int MaxRetries = 3;
     private const int RetryDelayMs = 1000;
 
     static readonly int[] Redistributables = [
         228983, // VC 2010 Redist
-        228990 // DirectX Jun 2010 Redist
+        228990  // DirectX Jun 2010 Redist
     ];
 
     internal class ManifestWrapper
     {
         public required DepotManifest Manifest;
-        public byte[]? DepotKey;
+        public required byte[] DepotKey;
         public required uint DepotId;
     }
 
@@ -67,7 +67,6 @@ public class DownloadManager(
     public ulong GetDownloadPercentage()
     {
         if (appSize is 0) return 0;
-
         var percentage = (double)totalAccumulator / appSize * 100;
         return (ulong)percentage;
     }
@@ -78,36 +77,34 @@ public class DownloadManager(
         return $"{speedMbps:F2} MB/s";
     }
 
-    public async Task DownloadAppAsync(uint appId, string path)
+    public async Task DownloadAppAsync(uint appId, string path, string os, uint[]? excludedDepots = null)
     {
         await steamSession.WaitLoggedOnAsync();
 
         var game = await picsClient.GetAppInfoAsync(appId);
         currentApp = game;
 
-        Console.WriteLine($"Found app {game.AppId}");
+        Console.WriteLine($"found app {game.AppId}");
 
         var depots = game.Depots.Depots.ToList()
             .Where(d => !Redistributables.Contains(int.Parse(d.Key)))
-            .Where(d => (d.Value?.Config?.OsList ?? "windows").Contains("windows"))
+            .Where(d => (d.Value?.Config?.OsList ?? os).Contains(os))
             .Where(d => (d.Value?.Config?.Language ?? "english") == "english")
+            .Where(d => excludedDepots is null || !excludedDepots.Contains(uint.Parse(d.Key)))
             .ToList();
 
-        depots.ForEach(d => Console.WriteLine($"[{d.Key}] dlc:{d.Value.DlcAppId.ToString() ?? "null"} os:{d.Value.Config?.OsList}"));
+        depots.ForEach(d => Console.WriteLine($"[{d.Key}] dlc:{d.Value.DlcAppId?.ToString() ?? "null"} os:{d.Value.Config?.OsList}"));
 
         Console.WriteLine($"downloading game {game.Config.InstallDir}");
-        Console.WriteLine($"found {depots.Count()} depots");
+        Console.WriteLine($"found {depots.Count} depots");
 
         var gameDirectory = Path.Combine(path, game.Config.InstallDir);
         Directory.CreateDirectory(gameDirectory);
 
-        var cdnServer = (await steamSession.SteamContent.GetServersForSteamPipe())
-            .ToList()
-            .First();
-
+        var cdnServers = (await steamSession.SteamContent.GetServersForSteamPipe()).ToList();
         using var cdnClient = new Client(steamSession.SteamClient);
 
-        Console.WriteLine($"using cdn {cdnServer.Host}");
+        Console.WriteLine($"using cdn {cdnServers.First().Host} (+{cdnServers.Count()} others)");
 
         var manifestDownloadTasks = depots.Select(async depot =>
         {
@@ -122,42 +119,41 @@ public class DownloadManager(
             var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
             if (manifest is null) return null;
 
+            var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
+            if (depotKey is null)
+            {
+                Console.WriteLine($"[manifest] no depot key for depot {depot.Key}");
+                return null;
+            }
+
             var wrappedManifest = new ManifestWrapper
             {
                 DepotId = depotId,
                 Manifest = manifest,
+                DepotKey = depotKey,
             };
 
-            if (manifest.FilenamesEncrypted)
+            var result = manifest.DecryptFilenames(depotKey);
+            if (!result)
             {
-                var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
-                if (depotKey is null)
-                {
-                    Console.WriteLine($"no depot key for depot {depot.Key}");
-                    return null;
-                }
-
-                var result = manifest.DecryptFilenames(depotKey);
-                if (!result)
-                {
-                    Console.WriteLine($"failed to decrypt filenames for depot {depot.Key}");
-                    return null;
-                }
-
-                wrappedManifest.DepotKey = depotKey;
+                Console.WriteLine($"[manifest] failed to decrypt filenames for depot {depot.Key}");
+                return null;
             }
 
-            Console.WriteLine($"successfully downloaded depot {manifest.DepotID}");
+            Console.WriteLine($"[manifest] depotkey={wrappedManifest.DepotKey?.Length.ToString() ?? "null"}, isEncrypted={manifest.FilenamesEncrypted}");
+            Console.WriteLine($"[manifest] successfully downloaded manifest for depot {manifest.DepotID}");
             return wrappedManifest;
         });
 
         var manifestFileResults = await Task.WhenAll(manifestDownloadTasks);
         var manifestFiles = manifestFileResults
             .Where(m => m != null)
-            .ToList()
-            .Cast<ManifestWrapper>();
+            .Cast<ManifestWrapper>()
+            .ToList();
 
-        var manifestCount = manifestFiles.Count();
+        appSize = (ulong)manifestFiles.Sum(m => (long)m.Manifest.TotalUncompressedSize);
+
+        var manifestCount = manifestFiles.Count;
         if (manifestCount > 0)
         {
             SpeedTimer.Interval = 1000;
@@ -166,23 +162,24 @@ public class DownloadManager(
                 var progressPercent = GetDownloadPercentage();
                 var speedMbps = GetDownloadSpeed();
 
-                Console.WriteLine($"📁 {currentFileName} | 📊 {progressPercent:F1}% | 🚀 {speedMbps}");
+                Console.WriteLine($"[dl] {progressPercent:F1}% | {speedMbps}");
                 byteAccumulator = 0;
             };
             SpeedTimer.Start();
 
-            Console.WriteLine($"⬇️  Downloading {manifestCount} manifests from {cdnServer.Host}");
-            await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServer);
-        }
+            var sw = Stopwatch.StartNew();
+            Console.WriteLine($"downloading {manifestCount} manifests from {cdnServers[0].Host}");
+            await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServers);
 
-        Console.WriteLine($"Downloaded {manifestCount} depots");
-        Console.WriteLine("Download finished!");
+            Console.WriteLine($"downloaded {manifestCount} depots");
+            Console.WriteLine($"download finished in {sw.Elapsed}!");
+        }
 
         SpeedTimer.Dispose();
         currentApp = null;
     }
 
-    private async Task DownloadManifestsAsync(IEnumerable<ManifestWrapper> manifestFiles, string gameDirectory, uint appId, Client cdnClient, Server cdnServer)
+    private async Task DownloadManifestsAsync(IEnumerable<ManifestWrapper> manifestFiles, string gameDirectory, uint appId, Client cdnClient, List<Server> cdnServers)
     {
         foreach (var manifestInfo in manifestFiles)
         {
@@ -191,94 +188,64 @@ public class DownloadManager(
 
             if (manifest.Files is null) continue;
 
-            appSize = manifest.TotalUncompressedSize;
+            var allFiles = manifest.Files
+                .Where(f => f.Chunks.Any())
+                .ToList();
 
-            Console.WriteLine($"[app {appId}] downloading {depotName} of {ByteSizeFormatter.FormatBytes(appSize)}");
+            foreach (var f in allFiles)
+            {
+                var filePath = Path.Combine(gameDirectory, f.FileName);
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+                if (!File.Exists(filePath))
+                {
+                    using var fs = new FileStream(filePath, FileMode.Create);
+                    fs.SetLength((long)f.TotalSize);
+                }
+            }
 
-            await Parallel.ForEachAsync(
-                manifest.Files,
-                new ParallelOptions { MaxDegreeOfParallelism = 4 },
-                async (file, ct) => await DownloadFileAsync(file, manifestInfo.DepotId, manifestInfo.DepotKey, depotName, gameDirectory, cdnClient, cdnServer)
-            );
-        }
-    }
+            var allChunks = allFiles.SelectMany(f => f.Chunks.Select(c => (
+                filePath: Path.Combine(gameDirectory, f.FileName),
+                chunk: c
+            )));
 
-    private async Task DownloadFileAsync(DepotManifest.FileData file, uint depotId, byte[]? depotKey, string depotName, string gameDirectory, Client cdnClient, Server cdnServer)
-    {
-        var fileName = Path.GetFileName(file.FileName);
-        var filePath = Path.Combine(gameDirectory, file.FileName);
+            Console.WriteLine($"[app {appId}] downloading {depotName} of {ByteSizeFormatter.FormatBytes(manifest.TotalUncompressedSize)}");
 
-        currentFileName = fileName;
-
-        if (File.Exists(filePath))
-        {
+            var writers = new ConcurrentDictionary<string, ChunkedFileWriter>();
             try
             {
-                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-                var fileHash = await SHA1.HashDataAsync(fileStream);
-
-                if (fileHash is null || fileHash.Length == 0 || file.FileHash.SequenceEqual(fileHash))
-                {
-                    Console.WriteLine($"[file {fileName}] file verified");
-                    return;
-                }
-                else
-                {
-                    Console.WriteLine($"[file {fileName}] hash mismatch, re-downloading");
-                    File.Delete(filePath);
-                }
+                await Parallel.ForEachAsync(
+                    allChunks,
+                    new ParallelOptions { MaxDegreeOfParallelism = 16 },
+                    async (item, ct) =>
+                    {
+                        var writer = writers.GetOrAdd(item.filePath, p => new ChunkedFileWriter(p));
+                        await DownloadChunkAsync(item.chunk, manifestInfo.DepotId, manifestInfo.DepotKey, writer, cdnClient, cdnServers.First());
+                    }
+                );
             }
-            catch (Exception ex)
+            finally
             {
-                Console.WriteLine($"[file {fileName}] verification failed: {ex.Message}, re-downloading");
-                try { File.Delete(filePath); } catch { }
+                foreach (var writer in writers.Values)
+                    writer.Dispose();
+                writers.Clear();
             }
-        }
-
-        var chunkCount = file.Chunks.Count();
-        if (chunkCount == 0)
-        {
-            Console.WriteLine($"[{depotName}] creating directory {file.FileName}");
-            Directory.CreateDirectory(filePath);
-            return;
-        }
-
-        Console.WriteLine($"[file {fileName}] downloading file; {chunkCount} chunks, {file.TotalSize} bytes");
-
-        try
-        {
-            using var writer = new ChunkedFileWriter(filePath);
-
-            await Parallel.ForEachAsync(file.Chunks, async (chunk, ct) =>
-                await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer));
-
-            writer.Flush();
-        }
-        catch
-        {
-            File.Delete(filePath);
-            throw;
         }
     }
 
-    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[]? depotKey, ChunkedFileWriter writer, Client cdnClient, Server cdnServer)
+    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[]? depotKey, ChunkedFileWriter writer, Client cdnClient, Server cdnServer, int retryCount = 0)
     {
         try
         {
-            retryCount = 0;
-
-            var length = depotKey is null
-                ? checked((int)chunk.CompressedLength)
-                : checked((int)chunk.UncompressedLength);
+            var length = checked((int)Math.Max(chunk.CompressedLength, chunk.UncompressedLength));
 
             byte[] buffer = RentBuffer(length);
             try
             {
-                var bytes = await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
+                await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
                 await writer.WriteChunkAsync(chunk, buffer);
 
-                Interlocked.Add(ref byteAccumulator, (ulong)bytes);
-                Interlocked.Add(ref totalAccumulator, (ulong)bytes);
+                Interlocked.Add(ref byteAccumulator, chunk.UncompressedLength);
+                Interlocked.Add(ref totalAccumulator, chunk.UncompressedLength);
             }
             finally
             {
@@ -296,9 +263,7 @@ public class DownloadManager(
             Console.WriteLine($"[file {currentFileName}] error downloading chunk: {ex.Message}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries})");
 
             await Task.Delay(RetryDelayMs);
-            retryCount += 1;
-
-            await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer);
+            await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServer, retryCount + 1);
         }
     }
 }
