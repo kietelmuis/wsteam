@@ -9,11 +9,14 @@ namespace wsteam.Data.Downloads;
 public class ChunkedFileWriter : IDisposable
 {
     private readonly SafeFileHandle file;
+    public readonly string fileName;
 
     public ChunkedFileWriter(string fileDirectory)
     {
         var directory = Path.GetDirectoryName(fileDirectory)
             ?? throw new DirectoryNotFoundException("Invalid fileDirectory");
+
+        fileName = Path.GetFileName(fileDirectory);
 
         Directory.CreateDirectory(directory);
 
