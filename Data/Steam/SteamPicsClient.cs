@@ -13,9 +13,18 @@ namespace wsteam.Data.Steam;
 /// <summary>
 /// Steam Product Information Control System
 /// </summary>
-public class SteamPicsClient(SteamSession steamSession)
+public class SteamPicsClient
 {
-    private readonly SteamApps steamApps = steamSession.SteamApps;
+    private readonly SteamApps steamApps;
+    private readonly string manifestCache;
+
+    public SteamPicsClient(SteamSession steamSession)
+    {
+        this.steamApps = steamSession.SteamApps;
+        this.manifestCache = manifestCache = Path.Combine(Directory.GetCurrentDirectory(), "manifests", "steam");
+
+        Directory.CreateDirectory(manifestCache);
+    }
 
     /// <summary>
     /// Request PICS access tokens for an app or package.
@@ -35,6 +44,10 @@ public class SteamPicsClient(SteamSession steamSession)
     /// </summary>
     public async Task<SteamApp> GetAppInfoAsync(uint appId)
     {
+        var fileLocation = Path.Combine(manifestCache, $"{appId}.manifest");
+        if (File.Exists(fileLocation))
+            return VdfToSteamApp(KeyValue.LoadFromString(await File.ReadAllTextAsync(fileLocation)));
+
         var accessToken = await GetAccessTokenAsync(appId)
             ?? throw new Exception($"Failed to get PICS accessToken for app {appId}");
 
@@ -52,16 +65,21 @@ public class SteamPicsClient(SteamSession steamSession)
 
         var firstApp = firstResult.Apps.First();
         var appVdf = firstApp.Value.KeyValues;
+        appVdf.SaveToFile(fileLocation, false);
 
+        return VdfToSteamApp(appVdf);
+    }
+
+    private SteamApp VdfToSteamApp(KeyValue appVdf)
+    {
         using var vdfStream = new MemoryStream();
         appVdf.SaveToStream(vdfStream, false);
         vdfStream.Position = 0;
 
         var vdf = VdfConvert.Deserialize(new StreamReader(vdfStream));
-        var vdfJson = vdf.ToJson().FirstOrDefault() ?? throw new Exception("The app could not be found in the Steam result");
-
-        using StreamWriter writer = new("./app.json");
-        await writer.WriteAsync(vdfJson.ToString());
+        var vdfJson = vdf.ToJson()
+            .FirstOrDefault()
+            ?? throw new Exception("The app could not be found in the Steam result");
 
         return vdfJson.ToObject<SteamApp>()
             ?? throw new Exception("Failed to deserialize Steam PICS response");
