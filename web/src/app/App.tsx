@@ -151,9 +151,7 @@ export default function App() {
                     {NAV_ITEMS.map((item) => (
                         <button
                             key={item.id}
-                            onClick={() =>
-                                window.external.sendMessage("322170")
-                            }
+                            onClick={() => setPage(item.id)}
                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md mb-0.5 transition-all duration-150 text-left ${
                                 page === item.id
                                     ? "bg-[#4a9eff]/15 text-[#4a9eff]"
@@ -237,21 +235,6 @@ export default function App() {
                             {title}
                         </h1>
                         <p className="text-[#5a5f70] text-xs">{subtitle}</p>
-                    </div>
-                    <div className="ml-auto flex items-center gap-3">
-                        {/* Status indicator */}
-                        <div className="flex items-center gap-1.5 bg-[#1a1c23] border border-[#2a2d35] px-2.5 py-1.5 rounded-md">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#3ddc84]" />
-                            <span className="text-[#5a5f70] text-xs">
-                                All sources online
-                            </span>
-                        </div>
-                        {/* Window controls (cosmetic) */}
-                        <div className="flex items-center gap-1.5 ml-2">
-                            <div className="w-3 h-3 rounded-full bg-[#ff5f5f] opacity-60" />
-                            <div className="w-3 h-3 rounded-full bg-[#f5a623] opacity-60" />
-                            <div className="w-3 h-3 rounded-full bg-[#3ddc84] opacity-60" />
-                        </div>
                     </div>
                 </div>
 
