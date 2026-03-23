@@ -22,7 +22,7 @@ public class ChunkedFileWriter : IDisposable
 
         file = File.OpenHandle(
             fileDirectory,
-            FileMode.Create,
+            FileMode.Open,
             FileAccess.Write
         );
     }

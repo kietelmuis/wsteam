@@ -194,7 +194,7 @@ public class DownloadManager(
 
             foreach (var f in allFiles)
             {
-                var filePath = Path.Combine(gameDirectory, f.FileName);
+                var filePath = Path.Combine(gameDirectory, f.FileName.Replace('\\', '/'));
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
                 if (!File.Exists(filePath))
                 {
@@ -204,7 +204,7 @@ public class DownloadManager(
             }
 
             var allChunks = allFiles.SelectMany(f => f.Chunks.Select(c => (
-                filePath: Path.Combine(gameDirectory, f.FileName),
+                filePath: Path.Combine(gameDirectory, f.FileName.Replace('\\', '/')),
                 chunk: c
             )));
 
@@ -215,7 +215,7 @@ public class DownloadManager(
             {
                 await Parallel.ForEachAsync(
                     allChunks,
-                    new ParallelOptions { MaxDegreeOfParallelism = 16 },
+                    new ParallelOptions { MaxDegreeOfParallelism = 6 },
                     async (item, ct) =>
                     {
                         var writer = writers.GetOrAdd(item.filePath, p => new ChunkedFileWriter(p));
@@ -228,6 +228,14 @@ public class DownloadManager(
                 foreach (var writer in writers.Values)
                     writer.Dispose();
                 writers.Clear();
+            }
+
+            foreach (var f in allFiles)
+            {
+                var filePath = Path.Combine(gameDirectory, f.FileName.Replace('\\', '/'));
+                var actual = new FileInfo(filePath).Length;
+                if (actual != (long)f.TotalSize)
+                    Console.WriteLine($"[verify] MISMATCH {f.FileName}: expected={f.TotalSize}, actual={actual}");
             }
         }
     }
@@ -242,7 +250,7 @@ public class DownloadManager(
             try
             {
                 await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
-                await writer.WriteChunkAsync(chunk, buffer);
+                await writer.WriteChunkAsync(chunk, buffer.AsMemory(0, (int)chunk.UncompressedLength));
 
                 Interlocked.Add(ref byteAccumulator, chunk.UncompressedLength);
                 Interlocked.Add(ref totalAccumulator, chunk.UncompressedLength);
