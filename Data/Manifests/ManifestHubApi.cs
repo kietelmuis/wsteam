@@ -11,6 +11,9 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.WebUtilities;
 using SteamKit2;
 
+/// <summary>
+/// Provides up-to-date manifests, may fail unexpectedly
+/// </summary>
 public class ManifestHubApi(HttpClient httpClient) : IManifestApi
 {
     private readonly HttpClient httpClient = httpClient;

@@ -11,6 +11,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
 using SteamKit2;
 
+/// <summary>
+/// Provides older manifests, more reliable than the ManifestHub
+/// </summary>
 public class GithubApi : IManifestApi
 {
     private HttpClient httpClient;
