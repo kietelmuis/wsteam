@@ -3,22 +3,35 @@ namespace wsteam.Data.Manifests;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Gameloop.Vdf;
+using Gameloop.Vdf.Linq;
 using Microsoft.Extensions.Caching.Memory;
+using Newtonsoft.Json.Linq;
 using SteamKit2;
+using wsteam.Data.DepotKey;
+using wsteam.Data.Downloads;
+
+class AppData
+{
+    public required DepotManifest Manifest { get; set; }
+    public byte[]? DepotKey { get; set; }
+}
 
 /// <summary>
 /// Provides older manifests, more reliable than the ManifestHub
 /// </summary>
-public class GithubApi : IManifestApi
+public class GithubApi : IManifestApi, IDepotKeySource
 {
     private HttpClient httpClient;
     private IMemoryCache memoryCache;
-    private readonly ConcurrentDictionary<uint, Lazy<Task<DepotManifest?[]>>> _manifestLoads = new();
+
+    private readonly ConcurrentDictionary<uint, Lazy<Task<List<AppData>>>> _appCache = new();
 
     public GithubApi(HttpClient httpClient, IMemoryCache memoryCache)
     {
@@ -29,33 +42,29 @@ public class GithubApi : IManifestApi
         this.memoryCache = memoryCache;
     }
 
-    public async Task<DepotManifest?> GetManifestAsync(uint appId, uint depotId, ulong manifestId)
+    private async Task<List<AppData>> CacheAllAsync(uint appId)
     {
-        var cacheKey = $"{appId}:{depotId}";
-        if (memoryCache.Get(cacheKey) is DepotManifest manifest)
-            return manifest;
+        Console.WriteLine($"Getting app data for {appId}");
 
-        var lazyTask = _manifestLoads.GetOrAdd(appId,
-            id => new Lazy<Task<DepotManifest?[]>>(() => CacheAllManifestsAsync(id)));
-
-        var manifests = await lazyTask.Value;
-        return manifests.FirstOrDefault(m => m is not null && m.DepotID == depotId);
-    }
-
-    public async Task<DepotManifest?[]> CacheAllManifestsAsync(uint appId)
-    {
-        Console.WriteLine($"Getting manifests for app {appId}");
         var response = await httpClient.GetAsync($"{appId}");
         if (!response.IsSuccessStatusCode)
         {
-            Console.WriteLine($"Failed to get manifest zip: {response.StatusCode}");
+            Console.WriteLine($"Failed to get zip: {response.StatusCode}");
             return [];
         }
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var zipfile = new ZipArchive(stream, ZipArchiveMode.Read);
 
-        return await Task.WhenAll(
+        VToken? vdf = null;
+        var vdfEntry = zipfile.Entries.FirstOrDefault(e => e.Name == "key.vdf");
+        if (vdfEntry is not null)
+        {
+            using var vdfStream = new StreamReader(vdfEntry.Open());
+            vdf = VdfConvert.Deserialize(await vdfStream.ReadToEndAsync()).Value;
+        }
+
+        return [.. (await Task.WhenAll(
             zipfile.Entries
                 .Where(e => e.Name.Contains("manifest"))
                 .Select(async e =>
@@ -65,7 +74,21 @@ public class GithubApi : IManifestApi
                         var manifest = DepotManifest.Deserialize(await e.OpenAsync());
                         memoryCache.Set($"{appId}:{manifest.DepotID}", manifest);
 
-                        return manifest;
+                        if (vdf is null) return new AppData
+                        {
+                            Manifest = manifest
+                        };
+
+                        var depotKey = vdf[manifest.DepotID.ToString()]?["DecryptionKey"]?.ToString();
+                        if (depotKey is null) return new AppData
+                        {
+                            Manifest = manifest
+                        };
+
+                        return new AppData {
+                            Manifest = manifest,
+                            DepotKey = Convert.FromHexString(depotKey)
+                        };
                     }
                     catch (Exception ex)
                     {
@@ -73,6 +96,34 @@ public class GithubApi : IManifestApi
                         return null;
                     }
                 })
-        );
+        ))
+        .Where(m => m is not null)
+        .Cast<AppData>()];
+    }
+
+    public async Task<DepotManifest?> GetManifestAsync(uint appId, uint depotId, ulong manifestId)
+    {
+        var cacheKey = $"{appId}:{depotId}";
+        if (memoryCache.Get(cacheKey) is DepotManifest manifest)
+            return manifest;
+
+        var lazyTask = _appCache.GetOrAdd(appId,
+            id => new Lazy<Task<List<AppData>>>(() => CacheAllAsync(id)));
+
+        var appList = await lazyTask.Value;
+        return appList.FirstOrDefault(a => a is not null && a.Manifest.DepotID == depotId)?.Manifest;
+    }
+
+    public async Task<byte[]?> GetDepotKeyAsync(uint appId, uint depotId)
+    {
+        var lazyTask = _appCache.GetOrAdd(appId,
+            id => new Lazy<Task<List<AppData>>>(() => CacheAllAsync(id)));
+
+        var appList = await lazyTask.Value;
+        if (appList is null)
+            return null;
+
+        var depot = appList.FirstOrDefault(a => a is not null && a.Manifest.DepotID == depotId);
+        return depot?.DepotKey;
     }
 }

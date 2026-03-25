@@ -1,11 +1,14 @@
-using System;
+﻿using System;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Photino.NET;
+using wsteam.Data.DepotKey;
 using wsteam.Data.Downloads;
 using wsteam.Data.Manifests;
 using wsteam.Data.Steam;
+using wsteam.Models.Steam;
 
 namespace wsteam;
 
@@ -17,14 +20,24 @@ class Program
         var services = new ServiceCollection();
         services.AddMemoryCache();
 
-        services.AddHttpClient<KernelManifestApi>();
+        services.AddHttpClient<ManifestHubApi>();
+        services.AddHttpClient<MorrenusManifestApi>();
         services.AddHttpClient<GithubApi>();
 
-        services.AddSingleton<ILuaApi, KernelManifestApi>();
+        services.AddSingleton<ManifestHubApi>();
+        services.AddSingleton<MorrenusManifestApi>();
+        services.AddSingleton<GithubApi>();
+
         services.AddSingleton<IManifestApi, GithubApi>();
 
+        services.AddSingleton<IDepotKeySource>
+            (sp => sp.GetRequiredService<GithubApi>());
+        // services.AddSingleton<IDepotKeySource>
+        //     (sp => new LuaKeySource(sp.GetRequiredService<ILuaApi>()));
+        services.AddSingleton(sp =>
+            new DepotKeyProvider([.. sp.GetServices<IDepotKeySource>()]));
+
         services.AddSingleton<SteamPicsClient>();
-        services.AddSingleton<DepotKeyProvider>();
         services.AddSingleton<DownloadManager>();
         services.AddSingleton<SteamSession>();
         var provider = services.BuildServiceProvider();

@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.CDN;
+using wsteam.Data.DepotKey;
 using wsteam.Data.Manifests;
 using wsteam.Data.Steam;
 using wsteam.Models.Steam;
@@ -119,7 +120,7 @@ public class DownloadManager(
             var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
             if (manifest is null) return null;
 
-            var depotKey = await depotKeyProvider.GetDepotKeysAsync(appId, depotId);
+            var depotKey = await depotKeyProvider.GetDepotKeyAsync(appId, depotId);
             if (depotKey is null)
             {
                 Console.WriteLine($"[manifest] no depot key for depot {depot.Key}");
