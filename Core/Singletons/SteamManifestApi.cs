@@ -64,7 +64,7 @@ public sealed class SteamManifestApi : ILuaApi, IManifestApi
         if (zip is null) return null;
 
         var luaEntry =
-            zip.Entries.FirstOrDefault(e => e.Name.Contains("lua")) ?? throw new Exception("Lua not found in zip");
+            zip.Entries.FirstOrDefault(e => e.Name.Contains("lua"));
 
         if (luaEntry is null)
         {

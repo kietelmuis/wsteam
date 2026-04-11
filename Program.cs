@@ -1,6 +1,7 @@
 ﻿using System;
 using System.CommandLine;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
@@ -9,6 +10,7 @@ using wsteam.Core.Downloads;
 using wsteam.Core.Manifests;
 using wsteam.Core.Singletons;
 using wsteam.Core.Steam;
+using wsteam.Models.Steam;
 
 namespace wsteam;
 
@@ -18,22 +20,21 @@ class Program
     {
         var rootCommand = new RootCommand("A CLI tool installing Steam games with manifests.");
 
+        var targetArg = new Argument<string>("target")
+        {
+            Description = "Steam appId (e.g. 255710) or a search query (e.g. \"Cities Skylines\")."
+        };
         Option<string> manifestApiKeyOption = new("--manifestApiKey")
         {
             Description = "ManifestHub API key",
             Required = true,
         };
-        Option<uint> appOption = new("--appId")
-        {
-            Description = "The app to install",
-            Required = true,
-        };
-        Option<string> filteredOsOption = new("--os")
+        Option<string> osOption = new("--os")
         {
             Description = "The operation system to filter",
             DefaultValueFactory = (_) => "windows"
         };
-        Option<uint[]> filteredDepotsOption = new("--depots")
+        Option<uint[]> depotsOption = new("--depots")
         {
             Description = "The depots to filter",
             DefaultValueFactory = (_) => []
@@ -42,9 +43,9 @@ class Program
         Command installCommand = new("install", "Install a game.")
         {
             manifestApiKeyOption,
-            appOption,
-            filteredOsOption,
-            filteredDepotsOption,
+            targetArg,
+            osOption,
+            depotsOption
         };
         rootCommand.Subcommands.Add(installCommand);
 
@@ -56,7 +57,9 @@ class Program
         services.AddHttpClient<ManifestHubApi>();
         services.AddHttpClient<MorrenusManifestApi>();
         services.AddHttpClient<GithubApi>();
+        services.AddHttpClient<ToolsSiteApi>();
 
+        services.AddSingleton<ToolsSiteApi>();
         services.AddSingleton<ManifestHubApi>();
         services.AddSingleton<MorrenusManifestApi>();
         services.AddSingleton<GithubApi>();
@@ -73,6 +76,7 @@ class Program
 
         services.AddSingleton<SteamPicsClient>();
         services.AddSingleton<DownloadManager>();
+        services.AddSingleton<SLSSteamApi>();
         services.AddSingleton<SteamSession>();
         var provider = services.BuildServiceProvider();
 
@@ -84,12 +88,19 @@ class Program
 
             Environment.SetEnvironmentVariable("MANIFEST_API_KEY", parseResult.GetValue(manifestApiKeyOption));
 
+            var toolSiteApi = provider.GetRequiredService<ToolsSiteApi>();
+            var queryResults = await toolSiteApi.GetAppResultsAsync(parseResult.GetValue(targetArg)!);
+            var game = queryResults.FirstOrDefault()
+                ?? throw new InvalidOperationException("Game not found.");
+
             await provider.GetRequiredService<DownloadManager>().DownloadAppAsync(
-                parseResult.GetValue(appOption),
+                game.Id,
                 gameDirectory,
-                parseResult.GetValue(filteredOsOption)!,
-                parseResult.GetValue(filteredDepotsOption)
+                parseResult.GetValue(osOption)!,
+                parseResult.GetValue(depotsOption)
             );
+
+            provider.GetRequiredService<SLSSteamApi>().AddAppIdToAppList(game.Id);
         });
 
         return rootCommand.Parse(args).Invoke();
