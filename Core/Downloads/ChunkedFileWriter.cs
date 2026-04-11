@@ -1,0 +1,42 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using Microsoft.Win32.SafeHandles;
+using SteamKit2;
+
+namespace wsteam.Core.Downloads;
+
+public class ChunkedFileWriter : IDisposable
+{
+    private readonly SafeFileHandle file;
+    public readonly string fileName;
+
+    public ChunkedFileWriter(string fileDirectory)
+    {
+        var directory = Path.GetDirectoryName(fileDirectory)
+            ?? throw new DirectoryNotFoundException("Invalid fileDirectory");
+
+        fileName = Path.GetFileName(fileDirectory);
+
+        Directory.CreateDirectory(directory);
+
+        file = File.OpenHandle(
+            fileDirectory,
+            FileMode.Open,
+            FileAccess.Write
+        );
+    }
+
+    public async Task WriteChunkAsync(DepotManifest.ChunkData chunk, Memory<byte> data)
+    {
+        var offset = (long)checked(chunk.Offset);
+        await RandomAccess.WriteAsync(file, data, offset);
+    }
+
+    public void Flush() => RandomAccess.FlushToDisk(file);
+
+    public void Dispose()
+    {
+        file.Dispose();
+    }
+}

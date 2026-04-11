@@ -1,22 +1,53 @@
 ﻿using System;
-using System.IO;
-using System.Linq;
+using System.CommandLine;
+using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
-using Photino.NET;
-using wsteam.Data.DepotKey;
-using wsteam.Data.Downloads;
-using wsteam.Data.Manifests;
-using wsteam.Data.Steam;
-using wsteam.Models.Steam;
+using wsteam.Core.DepotKey;
+using wsteam.Core.Downloads;
+using wsteam.Core.Manifests;
+using wsteam.Core.Singletons;
+using wsteam.Core.Steam;
 
 namespace wsteam;
 
 class Program
 {
-    [STAThread]
-    public static void Main(string[] args)
+    static async Task<int> Main(string[] args)
     {
+        var rootCommand = new RootCommand("A CLI tool installing Steam games with manifests.");
+
+        Option<string> manifestApiKeyOption = new("--manifestApiKey")
+        {
+            Description = "ManifestHub API key",
+            Required = true,
+        };
+        Option<uint> appOption = new("--appId")
+        {
+            Description = "The app to install",
+            Required = true,
+        };
+        Option<string> filteredOsOption = new("--os")
+        {
+            Description = "The operation system to filter",
+            DefaultValueFactory = (_) => "windows"
+        };
+        Option<uint[]> filteredDepotsOption = new("--depots")
+        {
+            Description = "The depots to filter",
+            DefaultValueFactory = (_) => []
+        };
+
+        Command installCommand = new("install", "Install a game.")
+        {
+            manifestApiKeyOption,
+            appOption,
+            filteredOsOption,
+            filteredDepotsOption,
+        };
+        rootCommand.Subcommands.Add(installCommand);
+
+        var parseResult = rootCommand.Parse(args);
+
         var services = new ServiceCollection();
         services.AddMemoryCache();
 
@@ -28,12 +59,13 @@ class Program
         services.AddSingleton<MorrenusManifestApi>();
         services.AddSingleton<GithubApi>();
 
-        services.AddSingleton<IManifestApi, GithubApi>();
+        services.AddSingleton<ILuaApi, SteamManifestApi>();
+        services.AddSingleton<IManifestApi, ManifestHubApi>();
 
         services.AddSingleton<IDepotKeySource>
             (sp => sp.GetRequiredService<GithubApi>());
-        // services.AddSingleton<IDepotKeySource>
-        //     (sp => new LuaKeySource(sp.GetRequiredService<ILuaApi>()));
+        services.AddSingleton<IDepotKeySource>
+            (sp => new LuaKeySource(sp.GetRequiredService<ILuaApi>()));
         services.AddSingleton(sp =>
             new DepotKeyProvider([.. sp.GetServices<IDepotKeySource>()]));
 
@@ -42,53 +74,18 @@ class Program
         services.AddSingleton<SteamSession>();
         var provider = services.BuildServiceProvider();
 
-        var window = new PhotinoWindow()
-            .SetTitle("Steam Downloader")
-            .SetDevToolsEnabled(true)
-            .SetContextMenuEnabled(true)
-            .SetWidth(1200)
-            .SetHeight(700)
-            .SetMinWidth(900)
-            .SetMinHeight(600)
-            .RegisterWebMessageReceivedHandler(async (sender, message) =>
-            {
-                Console.WriteLine(message);
-                var window = (PhotinoWindow?)sender;
-                if (window is null)
-                    return;
+        installCommand.SetAction(async parseResult =>
+        {
+            Environment.SetEnvironmentVariable("MANIFEST_API_KEY", parseResult.GetValue(manifestApiKeyOption));
 
-                var appId = uint.Parse(message);
-                var downloadDirectory = Path.Combine(Directory.GetCurrentDirectory(), "games");
+            await provider.GetRequiredService<DownloadManager>().DownloadAppAsync(
+                parseResult.GetValue(appOption),
+                "games",
+                parseResult.GetValue(filteredOsOption)!,
+                parseResult.GetValue(filteredDepotsOption)
+            );
+        });
 
-                var downloadManager = provider.GetRequiredService<DownloadManager>();
-                var currentApp = downloadManager.GetCurrentApp();
-
-                downloadManager.SpeedTimer.Elapsed += async (sender, e) =>
-                {
-                    var downloadSpeed = downloadManager.GetDownloadSpeed();
-                    var downloadPercentage = downloadManager.GetDownloadPercentage();
-
-                    await window.SendWebMessageAsync(JsonConvert.SerializeObject(new
-                    {
-                        appId = appId,
-                        name = currentApp?.Config.InstallDir,
-                        speed = downloadSpeed,
-                        percentage = downloadPercentage,
-                    }));
-                };
-
-                await downloadManager.DownloadAppAsync(appId, downloadDirectory, "windows", []);
-
-                await window.SendWebMessageAsync(JsonConvert.SerializeObject(new
-                {
-                    appId = appId,
-                    appName = currentApp?.Config.InstallDir,
-                    speed = "Finished",
-                    percentage = 100,
-                }));
-            })
-            .Load("wwwroot/index.html");
-
-        window.WaitForClose();
+        return rootCommand.Parse(args).Invoke();
     }
 }

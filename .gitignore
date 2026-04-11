@@ -1,6 +1,7 @@
 bin
 obj
 games
+manifests
 wwwroot
 
 node_modules

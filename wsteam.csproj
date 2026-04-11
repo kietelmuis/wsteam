@@ -3,13 +3,10 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
-    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>false</PublishTrimmed>
-    <RunEnvironmentVariables>WEBKIT_DISABLE_COMPOSITING_MODE=1</RunEnvironmentVariables>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,24 +17,8 @@
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
-    <PackageReference Include="Photino.NET" Version="4.0.16" />
     <PackageReference Include="SteamKit2" Version="3.4.0" />
+    <PackageReference Include="System.CommandLine" Version="2.0.5" />
     <PackageReference Include="System.Runtime.Caching" Version="10.0.3" />
-  </ItemGroup>
-
-  <Target Name="InstallFrontendDependencies" Inputs="web/package.json" Outputs="web/node_modules/.npm-installed">
-    <Exec Command="cd web &amp;&amp; npm install" />
-    <Touch Files="web/node_modules/.npm-installed" AlwaysCreate="true" />
-  </Target>
-
-  <Target Name="BuildFrontend" BeforeTargets="Build" DependsOnTargets="InstallFrontendDependencies">
-    <Exec Command="cd web &amp;&amp; npm run build" />
-  </Target>
-
-  <ItemGroup>
-    <Compile Remove="wwwroot\**" />
-    <None Update="wwwroot\**">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 </Project>
