@@ -1,7 +1,9 @@
 ﻿using System;
 using System.CommandLine;
+using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Win32;
 using wsteam.Core.DepotKey;
 using wsteam.Core.Downloads;
 using wsteam.Core.Manifests;
@@ -76,16 +78,48 @@ class Program
 
         installCommand.SetAction(async parseResult =>
         {
+            var steamDirectory = GetSteamDirectory()
+                ?? throw new InvalidOperationException("Steam directory not found.");
+            var gameDirectory = Path.Combine(steamDirectory, "steamapps", "common");
+
             Environment.SetEnvironmentVariable("MANIFEST_API_KEY", parseResult.GetValue(manifestApiKeyOption));
 
             await provider.GetRequiredService<DownloadManager>().DownloadAppAsync(
                 parseResult.GetValue(appOption),
-                "games",
+                gameDirectory,
                 parseResult.GetValue(filteredOsOption)!,
                 parseResult.GetValue(filteredDepotsOption)
             );
         });
 
         return rootCommand.Parse(args).Invoke();
+    }
+
+    private static string? GetSteamDirectory()
+    {
+        if (OperatingSystem.IsLinux())
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            string[] paths =
+            [
+                Path.Combine(home, ".steam", "steam"),
+                Path.Combine(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam")
+            ];
+
+            foreach (var path in paths)
+            {
+                if (Directory.Exists(path))
+                    return path;
+            }
+
+            return null;
+        }
+
+        return Registry.GetValue(
+            @"HKEY_CURRENT_USER\Software\Valve\Steam",
+            "InstallPath",
+            @"C:\Program Files (x86)\Steam"
+        ) as string;
     }
 }
