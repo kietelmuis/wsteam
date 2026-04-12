@@ -2,7 +2,7 @@ bin
 obj
 games
 manifests
-wwwroot
-
-node_modules
 app.json
+
+pkg
+*.tar.*

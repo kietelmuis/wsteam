@@ -1,5 +1,6 @@
 ﻿using System;
 using System.CommandLine;
+using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -10,7 +11,6 @@ using wsteam.Core.Downloads;
 using wsteam.Core.Manifests;
 using wsteam.Core.Singletons;
 using wsteam.Core.Steam;
-using wsteam.Models.Steam;
 
 namespace wsteam;
 
@@ -22,13 +22,29 @@ class Program
 
         var targetArg = new Argument<string>("target")
         {
-            Description = "Steam appId (e.g. 255710) or a search query (e.g. \"Cities Skylines\")."
+            Description = "Steam app query (e.g. \"STEINS;GATE\")."
         };
         Option<string> manifestApiKeyOption = new("--manifestApiKey")
         {
-            Description = "ManifestHub API key",
+            Description = "ManifestHub API key. Get it at https://manifesthub1.filegear-sg.me/",
             Required = true,
         };
+        manifestApiKeyOption.Validators.Add(result =>
+        {
+            var value = result.GetValue(manifestApiKeyOption);
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                result.AddError("ManifestHub API key is required. Get it at https://manifesthub1.filegear-sg.me/");
+                return;
+            }
+
+            if (value.Length != 64)
+            {
+                result.AddError("ManifestHub API key must be 64 characters long.");
+            }
+        });
+
         Option<string> osOption = new("--os")
         {
             Description = "The operation system to filter",
@@ -126,11 +142,15 @@ class Program
 
             return null;
         }
+        else if (OperatingSystem.IsWindows())
+        {
+            return Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Valve\Steam",
+                "InstallPath",
+                @"C:\Program Files (x86)\Steam"
+            ) as string;
+        }
 
-        return Registry.GetValue(
-            @"HKEY_CURRENT_USER\Software\Valve\Steam",
-            "InstallPath",
-            @"C:\Program Files (x86)\Steam"
-        ) as string;
+        return null;
     }
 }
