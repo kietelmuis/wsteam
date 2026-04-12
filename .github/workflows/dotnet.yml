@@ -48,7 +48,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cd publish
-          Compress-Archive -Path * -DestinationPath ../my-tool-${{ matrix.artifact }}.zip
+          Compress-Archive -Path * -DestinationPath ../wsteam-${{ matrix.artifact }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
