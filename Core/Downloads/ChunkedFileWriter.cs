@@ -33,10 +33,9 @@ public class ChunkedFileWriter : IDisposable
         await RandomAccess.WriteAsync(file, data, offset);
     }
 
-    public void Flush() => RandomAccess.FlushToDisk(file);
+    public void Flush()
+        => RandomAccess.FlushToDisk(file);
 
     public void Dispose()
-    {
-        file.Dispose();
-    }
+        => file.Dispose();
 }
