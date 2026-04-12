@@ -13,5 +13,5 @@ public class SearchResult
 
 public interface ISearchApi
 {
-    public Task<List<SearchResult?>> GetAppResultsAsync(string query);
+    public Task<List<SearchResult>> GetAppResultsAsync(string query);
 }
