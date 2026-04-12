@@ -42,7 +42,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           cd publish
-          tar -czf ../my-tool-${{ matrix.artifact }}.tar.gz *
+          tar -czf ../wsteam-${{ matrix.artifact }}.tar.gz *
           
       - name: Package (Windows)
         if: runner.os == 'Windows'
