@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            runtime: linux-x64
+            artifact: linux-x64
+          - os: ubuntu-latest
+            runtime: linux-arm64
+            artifact: linux-arm64
+          - os: windows-latest
+            runtime: win-x64
+            artifact: win-x64
+          - os: macos-latest
+            runtime: osx-x64
+            artifact: osx-x64
+          - os: macos-latest
+            runtime: osx-arm64
+            artifact: osx-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish
+        run: dotnet publish -c Release -r ${{ matrix.runtime }} --self-contained -p:PublishSingleFile=true -p:PublishTrimmed=true -o ./publish
+
+      - name: Package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd publish
+          tar -czf ../my-tool-${{ matrix.artifact }}.tar.gz *
+          
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd publish
+          Compress-Archive -Path * -DestinationPath ../my-tool-${{ matrix.artifact }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            *.tar.gz
+            *.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*/*.tar.gz \
+            artifacts/*/*.zip
