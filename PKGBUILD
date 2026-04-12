@@ -1,6 +1,6 @@
 pkgname="wsteam"
 pkgdesc="CLI tool for downloading Steam games"
-pkgver="0.1"
+pkgver="0.11"
 pkgrel="1"
 arch=('aarch64' 'x86_64')
 url="https://github.com/kietelmuis/wsteam"
