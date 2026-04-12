@@ -24,10 +24,10 @@ class Program
         {
             Description = "Steam app query (e.g. \"STEINS;GATE\")."
         };
-        Option<string> manifestApiKeyOption = new("--manifestApiKey")
+        Option<string> manifestApiKeyOption = new("--manifestApiKey", ["-k"])
         {
             Description = "ManifestHub API key. Get it at https://manifesthub1.filegear-sg.me/",
-            Required = true,
+            Required = Environment.GetEnvironmentVariable("MANIFEST_API_KEY") is null,
         };
         manifestApiKeyOption.Validators.Add(result =>
         {
@@ -102,7 +102,9 @@ class Program
                 ?? throw new InvalidOperationException("Steam directory not found.");
             var gameDirectory = Path.Combine(steamDirectory, "steamapps", "common");
 
-            Environment.SetEnvironmentVariable("MANIFEST_API_KEY", parseResult.GetValue(manifestApiKeyOption));
+            var manifestApiKey = parseResult.GetValue(manifestApiKeyOption);
+            if (string.IsNullOrWhiteSpace(manifestApiKey))
+                Environment.SetEnvironmentVariable("MANIFEST_API_KEY", manifestApiKey);
 
             var toolSiteApi = provider.GetRequiredService<ToolsSiteApi>();
             var queryResults = await toolSiteApi.GetAppResultsAsync(parseResult.GetValue(targetArg)!);
