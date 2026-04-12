@@ -103,7 +103,7 @@ class Program
             var gameDirectory = Path.Combine(steamDirectory, "steamapps", "common");
 
             var manifestApiKey = parseResult.GetValue(manifestApiKeyOption);
-            if (string.IsNullOrWhiteSpace(manifestApiKey))
+            if (!string.IsNullOrWhiteSpace(manifestApiKey))
                 Environment.SetEnvironmentVariable("MANIFEST_API_KEY", manifestApiKey);
 
             var toolSiteApi = provider.GetRequiredService<ToolsSiteApi>();
