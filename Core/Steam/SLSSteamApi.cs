@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using YamlDotNet.Serialization;
@@ -21,13 +22,21 @@ public class SLSSteamApi
         if (!File.Exists(SLSConfigFile))
             throw new FileNotFoundException($"SLS config file not found at {SLSConfigFile}");
 
-        var slsConfig = YamlDeserializer.Deserialize<SLSConfig>(File.ReadAllText(SLSConfigFile));
+        var yamlContent = YamlDeserializer.Deserialize<Dictionary<object, object>>(File.ReadAllText(SLSConfigFile));
 
-        if (slsConfig.AppIds is null)
-            slsConfig.AppIds = [newAppId];
-        else if (!slsConfig.AppIds.Contains(newAppId))
-            slsConfig.AppIds = [.. slsConfig.AppIds, newAppId];
-
-        File.WriteAllText(SLSConfigFile, YamlSerializer.Serialize(slsConfig));
+        List<object> appIds;
+        if (yamlContent.ContainsKey("AppIds"))
+        {
+            appIds = (yamlContent["AppIds"] as List<object>) ?? [];
+        }
+        else
+        {
+            appIds = [];
+            if (!appIds.Contains(newAppId))
+            {
+                appIds.Add(newAppId);
+                yamlContent["AppIds"] = appIds;
+                File.WriteAllText(SLSConfigFile, YamlSerializer.Serialize(yamlContent));
+            }
+        }
     }
-}
