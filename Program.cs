@@ -29,6 +29,10 @@ class Program
             Description = "ManifestHub API key. Get it at https://manifesthub1.filegear-sg.me/",
             Required = Environment.GetEnvironmentVariable("MANIFEST_API_KEY") is null,
         };
+        Option<string> folderOption = new("--folder", ["-f"])
+        {
+            Description = "Locatiion",
+        };
         manifestApiKeyOption.Validators.Add(result =>
         {
             var value = result.GetValue(manifestApiKeyOption);
@@ -59,6 +63,7 @@ class Program
         Command installCommand = new("install", "Install a game.")
         {
             manifestApiKeyOption,
+            folderOption,
             targetArg,
             osOption,
             depotsOption
@@ -98,9 +103,9 @@ class Program
 
         installCommand.SetAction(async parseResult =>
         {
-            var steamDirectory = GetSteamDirectory()
-                ?? throw new InvalidOperationException("Steam directory not found.");
-            var gameDirectory = Path.Combine(steamDirectory, "steamapps", "common");
+            var folder = parseResult.GetValue(folderOption);
+            var gameDirectory = folder is null ? folder : Path.Combine((GetSteamDirectory()
+                ?? throw new InvalidOperationException("Steam directory not found."), "steamapps", "common"));
 
             var manifestApiKey = parseResult.GetValue(manifestApiKeyOption);
             if (!string.IsNullOrWhiteSpace(manifestApiKey))
