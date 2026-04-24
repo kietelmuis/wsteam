@@ -20,7 +20,7 @@ public class SLSSteamApi
     public void AddAppIdToAppList(uint newAppId)
     {
         if (!File.Exists(SLSConfigFile))
-            throw new FileNotFoundException($"SLS config file not found at {SLSConfigFile}");
+            return;
 
         var yamlContent = YamlDeserializer.Deserialize<Dictionary<object, object>>(File.ReadAllText(SLSConfigFile));
 
