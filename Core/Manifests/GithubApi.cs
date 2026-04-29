@@ -7,15 +7,12 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
-using System.Threading;
 using System.Threading.Tasks;
 using Gameloop.Vdf;
 using Gameloop.Vdf.Linq;
 using Microsoft.Extensions.Caching.Memory;
-using Newtonsoft.Json.Linq;
 using SteamKit2;
 using wsteam.Core.DepotKey;
-using wsteam.Core.Downloads;
 
 class AppData
 {
@@ -25,11 +22,13 @@ class AppData
 
 /// <summary>
 /// Provides older manifests, more reliable than the ManifestHub
+///
+/// Unavailable due to GitHub organization takedown
 /// </summary>
 public class GithubApi : IManifestApi, IDepotKeySource
 {
-    private HttpClient httpClient;
-    private IMemoryCache memoryCache;
+    private readonly HttpClient httpClient;
+    private readonly IMemoryCache memoryCache;
 
     private readonly ConcurrentDictionary<uint, Lazy<Task<List<AppData>>>> _appCache = new();
 
@@ -44,12 +43,12 @@ public class GithubApi : IManifestApi, IDepotKeySource
 
     private async Task<List<AppData>> CacheAllAsync(uint appId)
     {
-        Console.WriteLine($"Getting app data for {appId}");
+        Console.WriteLine($"[githubapi] Getting app data for {appId}");
 
         var response = await httpClient.GetAsync($"{appId}");
         if (!response.IsSuccessStatusCode)
         {
-            Console.WriteLine($"Failed to get zip: {response.StatusCode}");
+            Console.WriteLine($"[githubapi] Failed to get zip: {response.StatusCode}");
             return [];
         }
 
@@ -92,7 +91,7 @@ public class GithubApi : IManifestApi, IDepotKeySource
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error deserializing {e.Name}: {ex.Message}");
+                        Console.WriteLine($"[githubapi] Error deserializing {e.Name}: {ex.Message}");
                         return null;
                     }
                 })

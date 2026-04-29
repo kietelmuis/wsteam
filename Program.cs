@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.CommandLine;
-using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,51 +8,72 @@ using Microsoft.Win32;
 using wsteam.Core.DepotKey;
 using wsteam.Core.Downloads;
 using wsteam.Core.Manifests;
-using wsteam.Core.Singletons;
 using wsteam.Core.Steam;
 
 namespace wsteam;
+
+enum ManifestSource
+{
+    ManifestHub,
+    Hubcap
+}
 
 class Program
 {
     static async Task<int> Main(string[] args)
     {
+        var services = new ServiceCollection();
         var rootCommand = new RootCommand("A CLI tool installing Steam games with manifests.");
 
         var targetArg = new Argument<string>("target")
         {
             Description = "Steam app query (e.g. \"STEINS;GATE\")."
         };
-        Option<string> manifestApiKeyOption = new("--manifestApiKey", ["-k"])
-        {
-            Description = "ManifestHub API key. Get it at https://manifesthub1.filegear-sg.me/",
-            Required = Environment.GetEnvironmentVariable("MANIFEST_API_KEY") is null,
-        };
-        Option<string> folderOption = new("--folder", ["-f"])
-        {
-            Description = "Locatiion",
-        };
-        manifestApiKeyOption.Validators.Add(result =>
-        {
-            var value = result.GetValue(manifestApiKeyOption);
 
+        Option<ManifestSource> sourceOption = new("--source", "-s")
+        {
+            Description = "The manifest source (manifesthub or morrenus).",
+            DefaultValueFactory = _ => ManifestSource.ManifestHub,
+        };
+        Option<string> locationOption = new("--location", ["-l"])
+        {
+            Description = "Custom location, default is Steam directory",
+        };
+
+        Option<string> apiKeyOption = new("--key", "-k")
+        {
+            Description = "The API key for the selected source. If omitted, the corresponding environment variable will be used.",
+            Required = true,
+        };
+
+        apiKeyOption.Validators.Add(result =>
+        {
+            var value = result.GetValue(apiKeyOption);
             if (string.IsNullOrWhiteSpace(value))
             {
-                result.AddError("ManifestHub API key is required. Get it at https://manifesthub1.filegear-sg.me/");
+                result.AddError("API key must be valid");
                 return;
             }
 
-            if (value.Length != 64)
+            switch (result.GetValue(sourceOption))
             {
-                result.AddError("ManifestHub API key must be 64 characters long.");
+                case ManifestSource.ManifestHub:
+                    if (value.Length != 64)
+                        result.AddError("ManifestHub's API key should be 64 characters");
+                    break;
+                case ManifestSource.Hubcap:
+                    if (!value.StartsWith("smm"))
+                        result.AddError("Hubcap's API key should start with smm");
+                    break;
             }
         });
 
-        Option<string> osOption = new("--os")
+        Option<SteamOperatingSystem> osOption = new("--os")
         {
             Description = "The operation system to filter",
-            DefaultValueFactory = (_) => "windows"
+            DefaultValueFactory = (_) => SteamOperatingSystem.Windows
         };
+
         Option<uint[]> depotsOption = new("--depots")
         {
             Description = "The depots to filter",
@@ -62,36 +82,26 @@ class Program
 
         Command installCommand = new("install", "Install a game.")
         {
-            manifestApiKeyOption,
-            folderOption,
+            sourceOption,
+            apiKeyOption,
+            locationOption,
             targetArg,
             osOption,
             depotsOption
         };
         rootCommand.Subcommands.Add(installCommand);
 
-        var parseResult = rootCommand.Parse(args);
-
-        var services = new ServiceCollection();
-        services.AddMemoryCache();
+        // services.AddMemoryCache();
 
         services.AddHttpClient<ManifestHubApi>();
-        services.AddHttpClient<MorrenusManifestApi>();
-        services.AddHttpClient<GithubApi>();
+        services.AddHttpClient<HubcapManifestApi>();
         services.AddHttpClient<ToolsSiteApi>();
 
         services.AddSingleton<ToolsSiteApi>();
-        services.AddSingleton<ManifestHubApi>();
-        services.AddSingleton<MorrenusManifestApi>();
-        services.AddSingleton<GithubApi>();
-
-        services.AddSingleton<ILuaApi, SteamManifestApi>();
         services.AddSingleton<IManifestApi, ManifestHubApi>();
+        services.AddSingleton<IDepotKeySource>(sp => sp.GetRequiredService<ManifestHubApi>());
+        services.AddSingleton<HubcapManifestApi>();
 
-        services.AddSingleton<IDepotKeySource>
-            (sp => sp.GetRequiredService<GithubApi>());
-        services.AddSingleton<IDepotKeySource>
-            (sp => new LuaKeySource(sp.GetRequiredService<ILuaApi>()));
         services.AddSingleton(sp =>
             new DepotKeyProvider([.. sp.GetServices<IDepotKeySource>()]));
 
@@ -99,27 +109,53 @@ class Program
         services.AddSingleton<DownloadManager>();
         services.AddSingleton<SLSSteamApi>();
         services.AddSingleton<SteamSession>();
+
         var provider = services.BuildServiceProvider();
 
         installCommand.SetAction(async parseResult =>
         {
-            var folder = parseResult.GetValue(folderOption);
-            var gameDirectory = folder is null ? folder : Path.Combine((GetSteamDirectory()
-                ?? throw new InvalidOperationException("Steam directory not found."), "steamapps", "common"));
+            var folder = parseResult.GetValue(locationOption);
+            var gameDirectory = folder is null ? Path.Combine(
+                GetSteamDirectory()
+                    ?? throw new InvalidOperationException("Steam directory not found."),
+                "steamapps",
+                "common"
+            ) : folder;
 
-            var manifestApiKey = parseResult.GetValue(manifestApiKeyOption);
-            if (!string.IsNullOrWhiteSpace(manifestApiKey))
-                Environment.SetEnvironmentVariable("MANIFEST_API_KEY", manifestApiKey);
+            var source = parseResult.GetValue(sourceOption);
+            var userProvidedKey = parseResult.GetValue(apiKeyOption);
+
+            if (!string.IsNullOrWhiteSpace(userProvidedKey))
+            {
+                Console.WriteLine(source);
+                Console.WriteLine(userProvidedKey);
+                switch (source)
+                {
+                    case ManifestSource.Hubcap:
+                        Environment.SetEnvironmentVariable("HUBCAP_API_KEY", userProvidedKey);
+                        break;
+                    case ManifestSource.ManifestHub:
+                        Environment.SetEnvironmentVariable("MANIFEST_API_KEY", userProvidedKey);
+                        break;
+                }
+            }
 
             var toolSiteApi = provider.GetRequiredService<ToolsSiteApi>();
             var queryResults = await toolSiteApi.GetAppResultsAsync(parseResult.GetValue(targetArg)!);
             var game = queryResults.FirstOrDefault()
-                ?? throw new InvalidOperationException("Game not found.");
+                ?? throw new InvalidOperationException("Game not found");
+
+            IManifestApi manifestApi = source switch
+            {
+                ManifestSource.Hubcap => provider.GetRequiredService<HubcapManifestApi>(),
+                _ => provider.GetRequiredService<ManifestHubApi>()
+            };
 
             await provider.GetRequiredService<DownloadManager>().DownloadAppAsync(
                 game.Id,
                 gameDirectory,
-                parseResult.GetValue(osOption)!,
+                parseResult.GetValue(osOption),
+                manifestApi,
                 parseResult.GetValue(depotsOption)
             );
 

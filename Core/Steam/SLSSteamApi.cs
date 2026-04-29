@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using YamlDotNet.Serialization;
 
 class SLSConfig
 {
-    public uint[] AppIds { get; set; }
+    public required uint[] AppIds { get; set; }
 }
 
 public class SLSSteamApi
@@ -40,3 +39,4 @@ public class SLSSteamApi
             }
         }
     }
+}

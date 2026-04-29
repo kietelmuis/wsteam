@@ -13,6 +13,8 @@ public class DepotKeyProvider
 
     public DepotKeyProvider(params IDepotKeySource[] sources)
     {
+        Console.WriteLine($"[depotkey] DepotKeyProvider created with {sources.Length} sources");
+
         this.sources = sources;
     }
 

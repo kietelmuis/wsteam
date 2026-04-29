@@ -2,6 +2,7 @@ namespace wsteam.Core.Manifests;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -10,11 +11,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.WebUtilities;
 using SteamKit2;
+using wsteam.Core.DepotKey;
 
 /// <summary>
 /// Provides up-to-date manifests, may fail unexpectedly
 /// </summary>
-public class ManifestHubApi(HttpClient httpClient) : IManifestApi
+public class ManifestHubApi(HttpClient httpClient) : IManifestApi, IDepotKeySource
 {
     private readonly HttpClient httpClient = httpClient;
 
@@ -28,7 +30,10 @@ public class ManifestHubApi(HttpClient httpClient) : IManifestApi
     private DateTime lastRequestTime = DateTime.MinValue;
     private DateTime backoffUntil = DateTime.MinValue;
 
+    private readonly string DepotKeyFile = Path.Combine(Directory.GetCurrentDirectory(), "depotKeys.json");
+
     private readonly SemaphoreSlim semaphoreSlim = new(1, 1);
+    private Dictionary<string, string>? cachedDepotKeys;
 
     public async Task<DepotManifest?> GetManifestAsync(uint appId, uint depotId, ulong manifestId)
     {
@@ -83,7 +88,7 @@ public class ManifestHubApi(HttpClient httpClient) : IManifestApi
                     var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>();
                     var error = jsonResponse.GetProperty("error");
 
-                    Console.WriteLine($"ManifestHub error {response.ReasonPhrase} (depot {depotId}): {error}, retrying in 5s");
+                    Console.WriteLine($"[ManifestHub] error {response.ReasonPhrase} (depot {depotId}): {error}, retrying in 5s");
 
                     await Task.Delay(5000);
                     continue;
@@ -101,5 +106,37 @@ public class ManifestHubApi(HttpClient httpClient) : IManifestApi
         {
             semaphoreSlim.Release();
         }
+    }
+
+    public async Task<byte[]?> GetDepotKeyAsync(uint appId, uint depotId)
+    {
+        if (cachedDepotKeys is null)
+        {
+            if (File.Exists(DepotKeyFile))
+            {
+                var json = await File.ReadAllTextAsync(DepotKeyFile);
+                cachedDepotKeys = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            }
+            else
+            {
+                using var response = await httpClient.GetAsync("https://gitlab.com/steamautocracks/manifesthub/-/raw/main/depotkeys.json?ref_type=heads");
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    cachedDepotKeys = JsonSerializer.Deserialize<Dictionary<string, string>>(content);
+                    await File.WriteAllTextAsync(DepotKeyFile, content);
+                }
+            }
+        }
+
+        Console.WriteLine(cachedDepotKeys?.Count);
+
+        if (cachedDepotKeys?.TryGetValue(depotId.ToString(), out var key) is true)
+        {
+            Console.WriteLine($"key length: {key.Length}, value: {key}");
+            return Convert.FromHexString(key);
+        }
+
+        return null;
     }
 }

@@ -2,7 +2,7 @@ bin
 obj
 games
 manifests
-app.json
+depotKeys.json
 
 pkg
 *.tar.*
