@@ -3,11 +3,13 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Hashing;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.CDN;
+using wsteam.Core.Common;
 using wsteam.Core.DepotKey;
 using wsteam.Core.Manifests;
 using wsteam.Core.Steam;
@@ -72,7 +74,8 @@ public class DownloadManager(
 
     public string GetDownloadSpeed()
     {
-        var speedMbps = byteAccumulator / 1024.0 / 1024.0;
+        var elapsedSeconds = SpeedTimer.Interval / 1000.0;
+        var speedMbps = byteAccumulator / 1024.0 / 1024.0 / elapsedSeconds;
         return $"{speedMbps:F2} MB/s";
     }
 
@@ -198,36 +201,33 @@ public class DownloadManager(
             );
 
             foreach (var dir in filePaths.Values
-                         .Select(Path.GetDirectoryName)
-                         .Distinct())
+                .Select(Path.GetDirectoryName)
+                .Distinct())
             {
                 if (dir != null)
                     Directory.CreateDirectory(dir);
             }
 
+            var files = new HashSet<ChunkedFile>();
+            var chunkJobs = new List<(ChunkedFile file, DepotManifest.ChunkData chunk)>();
+
             foreach (var f in allFiles)
             {
                 var path = filePaths[f];
 
-                if (!File.Exists(path))
+                var exists = File.Exists(path);
+                if (!exists)
                 {
-                    using var fs = new FileStream(path, FileMode.Create);
+                    using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
                     fs.SetLength((long)f.TotalSize);
                 }
-            }
 
-            var writers = new HashSet<ChunkedFileWriter>();
-            var chunkJobs = new List<(ChunkedFileWriter writer, DepotManifest.ChunkData chunk)>();
+                var file = new ChunkedFile(path, exists);
 
-            foreach (var f in allFiles)
-            {
-                var path = filePaths[f];
-                var writer = new ChunkedFileWriter(path);
-
-                writers.Add(writer);
+                files.Add(file);
 
                 foreach (var chunk in f.Chunks)
-                    chunkJobs.Add((writer, chunk));
+                    chunkJobs.Add((file, chunk));
             }
 
             Console.WriteLine(
@@ -245,7 +245,7 @@ public class DownloadManager(
                             job.chunk,
                             manifestInfo.DepotId,
                             manifestInfo.DepotKey,
-                            job.writer,
+                            job.file,
                             cdnClient,
                             cdnServers
                         );
@@ -253,14 +253,56 @@ public class DownloadManager(
             }
             finally
             {
-                foreach (var w in writers)
-                    w.Dispose();
+                foreach (var f in files)
+                    f.Dispose();
             }
         }
     }
 
-    private async Task DownloadChunkAsync(DepotManifest.ChunkData chunk, uint depotId, byte[]? depotKey, ChunkedFileWriter writer, Client cdnClient, Server[] cdnServers, int retryCount = 0)
+    private async Task DownloadChunkAsync(
+        DepotManifest.ChunkData chunk,
+        uint depotId,
+        byte[]? depotKey,
+        ChunkedFile file,
+        Client cdnClient,
+        Server[] cdnServers,
+        int retryCount = 0)
     {
+        bool isValid = false;
+
+        if (file.alreadyExists)
+        {
+            var uncompressedLength = (int)chunk.UncompressedLength;
+            byte[] verifyBuffer = RentBuffer(uncompressedLength);
+
+            try
+            {
+                var read = await file.ReadChunkAsync(chunk, verifyBuffer);
+
+                if (read == uncompressedLength)
+                {
+                    var computed = Adler.Compute(verifyBuffer.AsSpan(0, read));
+                    isValid = computed == chunk.Checksum;
+                    Console.WriteLine($"[download] Verifying chunk {chunk.Offset}: {isValid}");
+                }
+            }
+            catch
+            {
+                isValid = false;
+            }
+            finally
+            {
+                ReturnBuffer(verifyBuffer);
+            }
+        }
+
+        if (isValid)
+        {
+            Interlocked.Add(ref byteAccumulator, chunk.UncompressedLength);
+            Interlocked.Add(ref totalAccumulator, chunk.UncompressedLength);
+            return;
+        }
+
         var cdnServer = cdnServers[retryCount % cdnServers.Length];
         try
         {
@@ -270,7 +312,7 @@ public class DownloadManager(
             try
             {
                 await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
-                await writer.WriteChunkAsync(chunk, buffer.AsMemory(0, (int)chunk.UncompressedLength));
+                await file.WriteChunkAsync(chunk, buffer.AsMemory(0, (int)chunk.UncompressedLength));
 
                 Interlocked.Add(ref byteAccumulator, chunk.UncompressedLength);
                 Interlocked.Add(ref totalAccumulator, chunk.UncompressedLength);
@@ -291,7 +333,7 @@ public class DownloadManager(
             Console.WriteLine($"[depot {depotId}] error downloading chunk: {ex.Message}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries})");
 
             await Task.Delay(RetryDelayMs);
-            await DownloadChunkAsync(chunk, depotId, depotKey, writer, cdnClient, cdnServers, retryCount + 1);
+            await DownloadChunkAsync(chunk, depotId, depotKey, file, cdnClient, cdnServers, retryCount + 1);
         }
     }
 }

@@ -5,18 +5,13 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
+using wsteam.Core.Common;
 using wsteam.Core.DepotKey;
 using wsteam.Core.Downloads;
 using wsteam.Core.Manifests;
 using wsteam.Core.Steam;
 
 namespace wsteam;
-
-enum ManifestSource
-{
-    ManifestHub,
-    Hubcap
-}
 
 class Program
 {
@@ -98,9 +93,12 @@ class Program
         services.AddHttpClient<ToolsSiteApi>();
 
         services.AddSingleton<ToolsSiteApi>();
-        services.AddSingleton<IManifestApi, ManifestHubApi>();
-        services.AddSingleton<IDepotKeySource>(sp => sp.GetRequiredService<ManifestHubApi>());
         services.AddSingleton<HubcapManifestApi>();
+        services.AddSingleton<ManifestHubApi>();
+        services.AddSingleton<LuaKeySource>();
+        services.AddSingleton<IDepotKeySource>(sp => sp.GetRequiredService<ManifestHubApi>());
+        services.AddSingleton<IDepotKeySource>(sp => sp.GetRequiredService<LuaKeySource>());
+        services.AddSingleton<ApiKeyHolder>();
 
         services.AddSingleton(sp =>
             new DepotKeyProvider([.. sp.GetServices<IDepotKeySource>()]));
@@ -109,7 +107,6 @@ class Program
         services.AddSingleton<DownloadManager>();
         services.AddSingleton<SLSSteamApi>();
         services.AddSingleton<SteamSession>();
-
         var provider = services.BuildServiceProvider();
 
         installCommand.SetAction(async parseResult =>
@@ -127,8 +124,12 @@ class Program
 
             if (!string.IsNullOrWhiteSpace(userProvidedKey))
             {
+                var apiKeyHolder = provider.GetRequiredService<ApiKeyHolder>();
+                apiKeyHolder.AddApiKey(source, userProvidedKey);
+
                 Console.WriteLine(source);
                 Console.WriteLine(userProvidedKey);
+
                 switch (source)
                 {
                     case ManifestSource.Hubcap:

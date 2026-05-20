@@ -31,6 +31,12 @@ public class DepotKeyProvider
 
             foreach (var source in sources)
             {
+                if (!source.Available)
+                {
+                    Console.WriteLine($"[depotkey] Skipping source {source.GetType().Name} for app {appId}, depot {depotId}");
+                    continue;
+                }
+
                 Console.WriteLine($"[depotkey] Trying source {source.GetType().Name} for app {appId}, depot {depotId}");
 
                 var key = await source.GetDepotKeyAsync(appId, depotId);
@@ -41,6 +47,7 @@ public class DepotKeyProvider
                 }
             }
 
+            Console.WriteLine($"[depotkey] No key found for app {appId}, depot {depotId}");
             return null;
         }
         finally

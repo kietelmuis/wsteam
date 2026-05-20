@@ -11,18 +11,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.WebUtilities;
 using SteamKit2;
+using wsteam.Core.Common;
 using wsteam.Core.DepotKey;
 
 /// <summary>
 /// Provides up-to-date manifests, may fail unexpectedly
 /// </summary>
-public class ManifestHubApi(HttpClient httpClient) : IManifestApi, IDepotKeySource
+public class ManifestHubApi(HttpClient httpClient, ApiKeyHolder apiKeyHolder) : IManifestApi, IDepotKeySource
 {
     private readonly HttpClient httpClient = httpClient;
+    private readonly ApiKeyHolder apiKeyHolder = apiKeyHolder;
 
-    private readonly string apiKey =
-        Environment.GetEnvironmentVariable("MANIFEST_API_KEY")
-        ?? throw new InvalidOperationException("No manifest api key");
+    public bool Available => apiKeyHolder.GetApiKey(ManifestSource.ManifestHub) is not null;
 
     private const int MaxRetries = 5;
     private const int RequestIntervalMs = 500;
@@ -37,6 +37,9 @@ public class ManifestHubApi(HttpClient httpClient) : IManifestApi, IDepotKeySour
 
     public async Task<DepotManifest?> GetManifestAsync(uint appId, uint depotId, ulong manifestId)
     {
+        var apiKey = apiKeyHolder.GetApiKey(ManifestSource.ManifestHub)
+            ?? throw new InvalidOperationException("No manifest api key");
+
         await semaphoreSlim.WaitAsync();
         try
         {

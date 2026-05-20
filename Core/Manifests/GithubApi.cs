@@ -41,6 +41,8 @@ public class GithubApi : IManifestApi, IDepotKeySource
         this.memoryCache = memoryCache;
     }
 
+    public bool Available => false;
+
     private async Task<List<AppData>> CacheAllAsync(uint appId)
     {
         Console.WriteLine($"[githubapi] Getting app data for {appId}");

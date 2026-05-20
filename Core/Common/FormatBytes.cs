@@ -1,3 +1,5 @@
+namespace wsteam.Core.Common;
+
 using System;
 
 public static class ByteSizeFormatter

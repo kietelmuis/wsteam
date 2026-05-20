@@ -5,4 +5,6 @@ using System.Threading.Tasks;
 public interface IDepotKeySource
 {
     Task<byte[]?> GetDepotKeyAsync(uint appId, uint depotId);
+
+    bool Available { get; }
 }
