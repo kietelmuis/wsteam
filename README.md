@@ -1,5 +1,7 @@
 # wsteam
 
+CLI to install Steam games from manifests (ManifestHub/Hubcap).
+
 `wsteam` is a cross-platform CLI tool for **installing Steam games using manifests** (instead of the standard Steam download flow).
 It can search for a game by name, fetch the required manifests, download the depots, and place the game into your Steam library folder.
 
@@ -11,7 +13,7 @@ It can search for a game by name, fetch the required manifests, download the dep
 - Search Steam apps by a query string (e.g. `"STEINS;GATE"`)
 - Choose install location (defaults to your Steam `steamapps/common`)
 - Filter by target OS (`--os`)
-- **Exclude** specific depots from downloading (`--depots`)
+- Exclude specific depots from downloading (`--depots`)
 
 ## Requirements
 
