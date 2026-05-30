@@ -27,6 +27,9 @@ public class LuaKeySource : IDepotKeySource
             tempKeys[depotId] = Convert.FromHexString(depotKey);
             return new(0);
         });
+        state.Environment["addtoken"] = new LuaFunction((context, ct) =>
+            new(0)
+        );
         state.Environment["setManifestid"] = new LuaFunction((context, ct) =>
             new(0)
         );

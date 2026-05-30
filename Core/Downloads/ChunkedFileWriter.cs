@@ -25,7 +25,8 @@ public class ChunkedFile : IDisposable
             fileDirectory,
             FileMode.OpenOrCreate,
             FileAccess.ReadWrite,
-            FileShare.Read
+            FileShare.Read,
+            FileOptions.Asynchronous | FileOptions.RandomAccess
         );
     }
 

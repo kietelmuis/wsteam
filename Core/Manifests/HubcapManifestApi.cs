@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 using SteamKit2;
 using wsteam.Core.Common;
 using wsteam.Core.DepotKey;
-using wsteam.Models.Steam;
 
 /// <summary>
 /// Provides up-to-date manifests, limited to 25 manifests a day
@@ -88,33 +87,40 @@ public class HubcapManifestApi : IManifestApi
             using var stream = await response.Content.ReadAsStreamAsync();
             using var zip = new ZipArchive(stream);
 
-            var lua = zip.Entries.FirstOrDefault(e => e.Name.Contains("lua"));
+            string? luaScript = null;
+            var lua = zip.Entries.FirstOrDefault(e => e.Name.EndsWith(".lua", StringComparison.OrdinalIgnoreCase));
             if (lua is not null)
             {
-                Console.WriteLine($"Loading lua script from {lua.Name}");
+                Console.WriteLine($"Saving lua script to {luaFileLocation} (from {lua.Name})");
 
-
-                await lua.ExtractToFileAsync(luaFileLocation);
-
-                using var luaStream = await lua.OpenAsync();
+                using var luaStream = lua.Open();
                 using var streamReader = new StreamReader(luaStream);
-                await luaSrc.RunLuaAsync(await streamReader.ReadToEndAsync());
+                luaScript = await streamReader.ReadToEndAsync();
+
+                await File.WriteAllTextAsync(luaFileLocation, luaScript);
             }
 
-            return zip.Entries
-                .Where(e => e.Name.Contains("manifest"))
-                .Select(m =>
-                    {
-                        using var stream = m.Open();
-                        var manifest = DepotManifest.Deserialize(stream);
-                        var filePath = Path.Combine(fileDirectory, $"{manifest.DepotID}.manifest");
+            DepotManifest? requestedManifest = null;
+            foreach (var m in zip.Entries.Where(e => e.Name.EndsWith(".manifest", StringComparison.OrdinalIgnoreCase)))
+            {
+                using var manifestStream = m.Open();
+                var manifest = DepotManifest.Deserialize(manifestStream);
+                var filePath = Path.Combine(fileDirectory, $"{manifest.DepotID}.manifest");
 
-                        Directory.CreateDirectory(fileDirectory);
-                        manifest.SaveToFile(filePath);
+                Directory.CreateDirectory(fileDirectory);
+                manifest.SaveToFile(filePath);
 
-                        return manifest;
-                    })
-                .FirstOrDefault(m => m.DepotID == depotId);
+                if (manifest.DepotID == depotId)
+                    requestedManifest = manifest;
+            }
+
+            if (luaScript is not null)
+            {
+                Console.WriteLine($"Loading lua script from {luaFileLocation}");
+                await luaSrc.RunLuaAsync(luaScript);
+            }
+
+            return requestedManifest;
         }
         finally
         {

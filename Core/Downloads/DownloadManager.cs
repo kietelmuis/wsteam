@@ -3,7 +3,6 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Hashing;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,6 +28,29 @@ public class DownloadManager(
     DepotKeyProvider depotKeyProvider
 )
 {
+    private const string ChunkParallelismEnv = "WSTEAM_CHUNK_PARALLELISM";
+
+    private static int GetChunkParallelism()
+    {
+        var env = Environment.GetEnvironmentVariable(ChunkParallelismEnv);
+        if (int.TryParse(env, out var parsed) && parsed > 0)
+            return Math.Clamp(parsed, 1, 256);
+
+        return Math.Clamp(Environment.ProcessorCount * 4, 8, 64);
+    }
+
+    private int cdnServerCounter = 0;
+
+    private Server PickCdnServer(Server[] servers, int retryCount)
+    {
+        if (servers.Length == 0)
+            throw new InvalidOperationException("No CDN servers available");
+
+        var n = Interlocked.Increment(ref cdnServerCounter);
+        var baseIndex = (int)((uint)n % (uint)servers.Length);
+        return servers[(baseIndex + retryCount) % servers.Length];
+    }
+
     private readonly SteamSession steamSession = steamSession;
     private readonly SteamPicsClient picsClient = picsClient;
     private readonly DepotKeyProvider depotKeyProvider = depotKeyProvider;
@@ -236,9 +258,12 @@ public class DownloadManager(
 
             try
             {
+                var dop = GetChunkParallelism();
+                Console.WriteLine($"[downloader] chunk parallelism={dop} (override via {ChunkParallelismEnv})");
+
                 await Parallel.ForEachAsync(
                     chunkJobs,
-                    new ParallelOptions { MaxDegreeOfParallelism = 6 },
+                    new ParallelOptions { MaxDegreeOfParallelism = dop },
                     async (job, ct) =>
                     {
                         await DownloadChunkAsync(
@@ -281,9 +306,8 @@ public class DownloadManager(
 
                 if (read == uncompressedLength)
                 {
-                    var computed = Adler.Compute(verifyBuffer.AsSpan(0, read));
+                    var computed = Adler32.Calculate(1, verifyBuffer.AsSpan(0, read));
                     isValid = computed == chunk.Checksum;
-                    Console.WriteLine($"[download] Verifying chunk {chunk.Offset}: {isValid}");
                 }
             }
             catch
@@ -303,7 +327,7 @@ public class DownloadManager(
             return;
         }
 
-        var cdnServer = cdnServers[retryCount % cdnServers.Length];
+        var cdnServer = PickCdnServer(cdnServers, retryCount);
         try
         {
             var length = checked((int)Math.Max(chunk.CompressedLength, chunk.UncompressedLength));
