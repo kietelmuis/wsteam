@@ -10,6 +10,7 @@ public class ChunkedFile : IDisposable
 {
     private readonly SafeFileHandle file;
     public readonly string fileName;
+    public readonly string fullPath;
     public readonly bool alreadyExists;
 
     public ChunkedFile(string fileDirectory, bool alreadyExists)
@@ -18,6 +19,7 @@ public class ChunkedFile : IDisposable
             ?? throw new DirectoryNotFoundException("Invalid fileDirectory");
 
         fileName = Path.GetFileName(fileDirectory);
+        fullPath = fileDirectory;
         Directory.CreateDirectory(directory);
 
         this.alreadyExists = alreadyExists;
@@ -32,14 +34,29 @@ public class ChunkedFile : IDisposable
 
     public async Task WriteChunkAsync(DepotManifest.ChunkData chunk, Memory<byte> data)
     {
-        var offset = (long)checked(chunk.Offset);
-        await RandomAccess.WriteAsync(file, data, offset);
+        try
+        {
+            var offset = (long)checked(chunk.Offset);
+            await RandomAccess.WriteAsync(file, data, offset);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Failed to write chunk {chunk.Offset} of {fileName} ({ex.Message})");
+        }
     }
 
     public async Task<int> ReadChunkAsync(DepotManifest.ChunkData chunk, Memory<byte> data)
     {
-        var offset = (long)checked(chunk.Offset);
-        return await RandomAccess.ReadAsync(file, data, offset);
+        try
+        {
+            var offset = (long)checked(chunk.Offset);
+            var read = await RandomAccess.ReadAsync(file, data, offset);
+            return read;
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Failed to read chunk {chunk.Offset} of {fileName} ({ex.Message})");
+        }
     }
 
     public void Flush()

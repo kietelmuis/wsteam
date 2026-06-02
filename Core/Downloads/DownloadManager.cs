@@ -66,6 +66,10 @@ public class DownloadManager(
     private const int MaxRetries = 3;
     private const int RetryDelayMs = 1000;
 
+    private ulong _lastTotal = 0;
+    private double _smoothedBytesPerSec = 0;
+    private const double Alpha = 0.2;
+
     static readonly int[] Redistributables = [
         228983, // VC 2010 Redist
         228990  // DirectX Jun 2010 Redist
@@ -92,6 +96,20 @@ public class DownloadManager(
         if (appSize is 0) return 0;
         var percentage = (double)totalAccumulator / appSize * 100;
         return (ulong)percentage;
+    }
+
+    public string GetEstimatedRemainingTime()
+    {
+        var currentTotal = Interlocked.Read(ref totalAccumulator);
+        var delta = currentTotal - _lastTotal;
+        _lastTotal = currentTotal;
+
+        _smoothedBytesPerSec = Alpha * delta + (1 - Alpha) * _smoothedBytesPerSec;
+
+        var remaining = appSize - currentTotal;
+        return _smoothedBytesPerSec > 0
+            ? TimeSpan.FromSeconds(remaining / _smoothedBytesPerSec).ToString(@"hh\:mm\:ss")
+            : "?";
     }
 
     public string GetDownloadSpeed()
@@ -130,23 +148,33 @@ public class DownloadManager(
 
         Console.WriteLine($"[downloader] using cdn {cdnServers.First().Host} (+{cdnServers.Count()} others)");
 
+        ulong totalSize = 0;
+
         var manifestDownloadTasks = depots.Select(async depot =>
         {
             if (depot.Value.Manifests is null) return null;
 
             var publicManifest = depot.Value.Manifests["public"];
-            if (publicManifest is null) return null;
+            if (publicManifest is null)
+            {
+                Console.WriteLine($"[manifest] no public manifest for depot {depot.Key}! cannot download depot");
+                return null;
+            }
 
             var depotId = uint.Parse(depot.Key);
             var manifestId = ulong.Parse(publicManifest.Gid);
 
             var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
-            if (manifest is null) return null;
+            if (manifest is null)
+            {
+                Console.WriteLine($"[manifest] failed to download manifest for depot {depot.Key}! cannot download depot");
+                return null;
+            }
 
             var depotKey = await depotKeyProvider.GetDepotKeyAsync(appId, depotId);
             if (depotKey is null)
             {
-                Console.WriteLine($"[manifest] no depot key for depot {depot.Key}");
+                Console.WriteLine($"[manifest] no depot key for depot {depot.Key}! cannot decrypt");
                 return null;
             }
 
@@ -166,8 +194,17 @@ public class DownloadManager(
 
             Console.WriteLine($"[manifest] depotkey={wrappedManifest.DepotKey?.Length.ToString() ?? "null"}, isEncrypted={manifest.FilenamesEncrypted}");
             Console.WriteLine($"[manifest] successfully downloaded manifest for depot {manifest.DepotID}");
+            totalSize += manifest.TotalUncompressedSize;
+
             return wrappedManifest;
         });
+
+        var drive = new DriveInfo(Path.GetPathRoot(path)!);
+        if (drive.AvailableFreeSpace < (long)totalSize)
+        {
+            Console.WriteLine($"[downloader] not enough space on drive {drive.Name} (available={drive.AvailableFreeSpace}, required={totalSize})");
+            return;
+        }
 
         var manifestFileResults = await Task.WhenAll(manifestDownloadTasks);
         var manifestFiles = manifestFileResults
@@ -185,8 +222,9 @@ public class DownloadManager(
             {
                 var progressPercent = GetDownloadPercentage();
                 var speedMbps = GetDownloadSpeed();
+                var eta = GetEstimatedRemainingTime();
 
-                Console.WriteLine($"[dl] {progressPercent:F1}% | {speedMbps}");
+                Console.WriteLine($"[dl] {progressPercent:F1}% | {speedMbps} | {eta}");
                 byteAccumulator = 0;
             };
             SpeedTimer.Start();
@@ -195,8 +233,8 @@ public class DownloadManager(
             Console.WriteLine($"[downloader] downloading {manifestCount} manifests from {cdnServers[0].Host}");
             await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServers);
 
-            Console.WriteLine($"[downloader] downloaded {manifestCount} depots");
-            Console.WriteLine($"[downloader] download finished in {sw.Elapsed}!");
+            Console.WriteLine($"[downloader] downloaded {manifestCount} depot(s)");
+            Console.WriteLine($"[downloader] download finished in {sw.Elapsed.ToString(@"hh\:mm\:ss\.ff")}!");
         }
 
         SpeedTimer.Dispose();
@@ -302,16 +340,23 @@ public class DownloadManager(
 
             try
             {
-                var read = await file.ReadChunkAsync(chunk, verifyBuffer);
+                var read = await file.ReadChunkAsync(chunk, verifyBuffer.AsMemory(0, uncompressedLength));
 
                 if (read == uncompressedLength)
                 {
-                    var computed = Adler32.Calculate(1, verifyBuffer.AsSpan(0, read));
+                    var computed = Adler32.Calculate(0, verifyBuffer.AsSpan(0, uncompressedLength));
                     isValid = computed == chunk.Checksum;
+                    if (!isValid)
+                        Console.WriteLine($"[verify] Chunk INVALID for {file.fileName} offset {chunk.Offset} expected {chunk.Checksum} got {computed}");
+                }
+                else
+                {
+                    Console.WriteLine($"[verify] Could not read full chunk for {file.fileName} offset {chunk.Offset}");
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[verify] Exception while verifying chunk: {ex}");
                 isValid = false;
             }
             finally
