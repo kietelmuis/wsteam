@@ -130,7 +130,7 @@ public class DownloadManager(
 
         var depots = game.Depots.Depots.ToList()
             .Where(d => !Redistributables.Contains(int.Parse(d.Key)))
-            .Where(d => (d.Value?.Config?.OsList ?? nameof(os)).Contains(nameof(os)))
+            .Where(d => (d.Value?.Config?.OsList ?? "").Contains(os.ToString(), StringComparison.OrdinalIgnoreCase))
             .Where(d => (d.Value?.Config?.Language ?? "english") == "english")
             .Where(d => excludedDepots is null || !excludedDepots.Contains(uint.Parse(d.Key)))
             .ToList();
