@@ -4,10 +4,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using SteamKit2;
 using SteamKit2.CDN;
+using SteamKit2.Internal;
 using wsteam.Core.Common;
 using wsteam.Core.DepotKey;
 using wsteam.Core.Manifests;
@@ -36,7 +39,9 @@ public class DownloadManager(
         if (int.TryParse(env, out var parsed) && parsed > 0)
             return Math.Clamp(parsed, 1, 256);
 
-        return Math.Clamp(Environment.ProcessorCount * 4, 8, 64);
+        int dynamicDefault = Environment.ProcessorCount + 4;
+        int minThreads = Math.Max(4, Environment.ProcessorCount);
+        return Math.Clamp(dynamicDefault, minThreads, 32);
     }
 
     private int cdnServerCounter = 0;
@@ -119,6 +124,162 @@ public class DownloadManager(
         return $"{speedMbps:F2} MB/s";
     }
 
+    public async Task DownloadPubFileAsync(uint appId, PublishedFileID pubId, string steamDirectory = "")
+    {
+        await steamSession.WaitLoggedOnAsync();
+
+        var pubFileRequest = new CPublishedFile_GetDetails_Request
+        {
+            appid = appId,
+            includechildren = true,
+        };
+        pubFileRequest.publishedfileids.Add(pubId);
+
+        var cdnServers = (await steamSession.SteamContent.GetServersForSteamPipe()).ToArray();
+        using var cdnClient = new Client(steamSession.SteamClient);
+
+        var details = await steamSession.PublishedFile.GetDetails(pubFileRequest);
+        if (details.Result is not EResult.OK)
+            throw new InvalidOperationException("Failed to get UGC details");
+
+        string? downloadedTitle = null;
+        List<ulong> contentFileIds = [];
+        List<(string, string)> fileUrls = [];
+
+        foreach (var file in details.Body.publishedfiledetails)
+        {
+            if (file is null) continue;
+
+            Console.WriteLine($"[workshop] found file {file.title} ({file.publishedfileid}) of type {(EWorkshopFileType)file.file_type}");
+            switch ((EWorkshopFileType)file.file_type)
+            {
+                case EWorkshopFileType.Collection:
+                    foreach (var child in file.children)
+                    {
+                        await DownloadPubFileAsync(appId, child.publishedfileid);
+                    }
+                    break;
+                case EWorkshopFileType.First:
+                    if (!string.IsNullOrEmpty(file.file_url))
+                    {
+                        fileUrls.Add((file.filename, file.file_url));
+                    }
+                    else if (file.hcontent_file > 0)
+                    {
+                        downloadedTitle = file.title;
+                        Console.WriteLine($"[workshop] {file.title} has content file id {file.hcontent_file}");
+                        contentFileIds.Add(file.hcontent_file);
+                    }
+                    break;
+            }
+        }
+
+        var steamWorkshopDirectory = Path.Combine(steamDirectory, "steamapps", "workshop", "content", appId.ToString());
+        Directory.CreateDirectory(steamWorkshopDirectory);
+
+        Console.WriteLine($"[workshop] {fileUrls.Count()} files to download from URLs and {contentFileIds.Count()} files to download from content servers");
+
+        foreach (var fileId in contentFileIds)
+        {
+            var workshopItemDirectory = Path.Combine(steamWorkshopDirectory, pubId.ToString());
+            Directory.CreateDirectory(workshopItemDirectory);
+
+            var app = await picsClient.GetAppInfoAsync(appId);
+            currentApp = app;
+
+            Console.WriteLine($"[downloader] found app {app.AppId}");
+
+            if (app.Depots.WorkshopDepot is null && app.Depots.WorkshopDepot != 0)
+            {
+                Console.WriteLine($"[workshop] no workshop depot found! cannot download content file {fileId}");
+                continue;
+            }
+            Console.WriteLine($"[workshop] found workshop depot {app.Depots.WorkshopDepot}");
+
+            var keyResponse = await steamSession.SteamApps.GetDepotDecryptionKey((uint)app.Depots.WorkshopDepot, appId);
+            if (keyResponse.Result is not EResult.OK)
+            {
+                Console.WriteLine($"[workshop] failed to get depot key for workshop depot {app.Depots.WorkshopDepot}: {keyResponse.Result}");
+                continue;
+            }
+            Console.WriteLine($"[workshop] got depot key {keyResponse.DepotKey} for workshop depot {app.Depots.WorkshopDepot}");
+
+            var requestCode = await steamSession.SteamContent.GetManifestRequestCode((uint)app.Depots.WorkshopDepot, appId, fileId);
+            if (requestCode == 0)
+            {
+                Console.WriteLine($"[workshop] failed to get manifest request code for content file {fileId}");
+                continue;
+            }
+            Console.WriteLine($"[workshop] got manifest request code {requestCode} for content file {fileId}");
+
+            var manifest = await cdnClient.DownloadManifestAsync(
+                keyResponse.DepotID,
+                fileId,
+                requestCode,
+                cdnServers.First()
+            );
+
+            if (manifest.FilenamesEncrypted)
+                manifest.DecryptFilenames(keyResponse.DepotKey);
+
+            var manifestWrapper = new ManifestWrapper
+            {
+                DepotId = (uint)app.Depots.WorkshopDepot,
+                DepotKey = keyResponse.DepotKey,
+                Manifest = manifest
+            };
+
+            appSize = manifest.TotalUncompressedSize;
+
+            SpeedTimer.Interval = 1000;
+            SpeedTimer.Elapsed += (sender, e) =>
+            {
+                var progressPercent = GetDownloadPercentage();
+                var speedMbps = GetDownloadSpeed();
+                var eta = GetEstimatedRemainingTime();
+
+                Console.WriteLine($"[dl] {progressPercent:F1}% | {speedMbps} | {eta}");
+                byteAccumulator = 0;
+            };
+            SpeedTimer.Start();
+
+            var sw = Stopwatch.StartNew();
+            Console.WriteLine($"[downloader] downloading workshop item from cellid {cdnServers[0].CellID}");
+            await DownloadManifestsAsync([manifestWrapper], workshopItemDirectory, appId, cdnClient, cdnServers);
+
+            Console.WriteLine($"[downloader] download finished in {sw.Elapsed.ToString(@"hh\:mm\:ss\.ff")}!");
+
+            SpeedTimer.Dispose();
+            currentApp = null;
+        }
+
+        foreach (var file in fileUrls)
+        {
+            var workshopItemDirectory = Path.Combine(steamWorkshopDirectory, pubId.ToString());
+            Directory.CreateDirectory(workshopItemDirectory);
+
+            using var client = new HttpClient();
+
+            var filePath = Path.Combine(workshopItemDirectory, file.Item1);
+            Console.WriteLine($"[workshop] downloading {file.Item1} to {filePath}");
+
+            var response = await client.GetAsync(file.Item2);
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"[workshop] failed to download {file.Item1} from {file.Item2}: {response.StatusCode}");
+                continue;
+            }
+
+            using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
+            await response.Content.CopyToAsync(fs);
+
+            await fs.FlushAsync();
+            fs.Close();
+        }
+
+        Console.WriteLine($"[workshop] finished downloading \"{downloadedTitle ?? pubId.ToString()}\" ({pubId}) to {Path.Combine(steamWorkshopDirectory, pubId.ToString())}");
+    }
+
     public async Task DownloadAppAsync(uint appId, string path, SteamOperatingSystem os, IManifestApi manifestApi, uint[]? excludedDepots = null)
     {
         await steamSession.WaitLoggedOnAsync();
@@ -146,7 +307,7 @@ public class DownloadManager(
         var cdnServers = (await steamSession.SteamContent.GetServersForSteamPipe()).ToArray();
         using var cdnClient = new Client(steamSession.SteamClient);
 
-        Console.WriteLine($"[downloader] using cdn {cdnServers.First().Host} (+{cdnServers.Count()} others)");
+        Console.WriteLine($"[downloader] using cellid {cdnServers.First().CellID} (+{cdnServers.Count()} cells)");
 
         ulong totalSize = 0;
 
@@ -154,7 +315,7 @@ public class DownloadManager(
         {
             if (depot.Value.Manifests is null) return null;
 
-            var publicManifest = depot.Value.Manifests["public"];
+            var publicManifest = depot.Value.Manifests.TryGetValue("public", out var pManifest) ? pManifest : null;
             if (publicManifest is null)
             {
                 Console.WriteLine($"[manifest] no public manifest for depot {depot.Key}! cannot download depot");
@@ -230,7 +391,7 @@ public class DownloadManager(
             SpeedTimer.Start();
 
             var sw = Stopwatch.StartNew();
-            Console.WriteLine($"[downloader] downloading {manifestCount} manifests from {cdnServers[0].Host}");
+            Console.WriteLine($"[downloader] downloading {manifestCount} manifests from cellid {cdnServers[0].CellID}");
             await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServers);
 
             Console.WriteLine($"[downloader] downloaded {manifestCount} depot(s)");
@@ -249,7 +410,12 @@ public class DownloadManager(
             var depotName = $"depot {manifest.DepotID}";
 
             if (manifest.Files is null)
+            {
+                Console.WriteLine($"[manifest] Files is null for depot {manifest.DepotID}");
                 continue;
+            }
+
+            Console.WriteLine($"[manifest] depot {manifest.DepotID} has {manifest.Files.Count} total files, {manifest.Files.Count(f => f.Chunks.Any())} with chunks, filenamesEncrypted={manifest.FilenamesEncrypted}");
 
             var allFiles = manifest.Files
                 .Where(f => f.Chunks.Any())
@@ -257,7 +423,7 @@ public class DownloadManager(
 
             var filePaths = allFiles.ToDictionary(
                 f => f,
-                f => Path.Combine(gameDirectory, f.FileName.Replace('\\', Path.DirectorySeparatorChar))
+                f => Path.Combine(gameDirectory, f.FileName.TrimStart('\\', '/').Replace('\\', Path.DirectorySeparatorChar))
             );
 
             foreach (var dir in filePaths.Values

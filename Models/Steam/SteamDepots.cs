@@ -13,6 +13,9 @@ public class SteamDepots
     [JsonProperty("branches")]
     public Dictionary<string, Branch>? Branches { get; set; }
 
+    [JsonProperty("workshopdepot")]
+    public uint? WorkshopDepot { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JToken>? RawDepots { get; set; }
 

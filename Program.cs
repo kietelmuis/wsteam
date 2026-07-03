@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
+using SteamKit2;
 using wsteam.Core.Common;
 using wsteam.Core.DepotKey;
 using wsteam.Core.Downloads;
@@ -75,6 +76,19 @@ class Program
             DefaultValueFactory = (_) => []
         };
 
+        Command downloadPubFileCommand = new("workshop", "Download workshop item")
+        {
+            new Argument<uint>("appId")
+            {
+                Description = "The app ID."
+            },
+            new Argument<PublishedFileID>("pubId")
+            {
+                Description = "The published file ID."
+            }
+        };
+        rootCommand.Subcommands.Add(downloadPubFileCommand);
+
         Command installCommand = new("install", "Install a game.")
         {
             sourceOption,
@@ -109,8 +123,26 @@ class Program
         services.AddSingleton<SteamSession>();
         var provider = services.BuildServiceProvider();
 
+        downloadPubFileCommand.SetAction(async parseResult =>
+        {
+            var steamSession = provider.GetRequiredService<SteamSession>();
+            steamSession.Connect(false);
+
+            var appId = parseResult.GetValue<uint>("appId");
+            var pubId = parseResult.GetValue<ulong>("pubId");
+
+            var steamDirectory = GetSteamDirectory()
+                ?? throw new InvalidOperationException("Steam directory not found.");
+
+            var downloadManager = provider.GetRequiredService<DownloadManager>();
+            await downloadManager.DownloadPubFileAsync(appId, new PublishedFileID(pubId), steamDirectory);
+        });
+
         installCommand.SetAction(async parseResult =>
         {
+            var steamSession = provider.GetRequiredService<SteamSession>();
+            steamSession.Connect();
+
             var folder = parseResult.GetValue(locationOption);
             var gameDirectory = folder is null ? Path.Combine(
                 GetSteamDirectory()
