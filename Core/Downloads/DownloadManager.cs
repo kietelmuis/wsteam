@@ -7,7 +7,8 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Newtonsoft.Json;
+using System.Collections.Concurrent;
+using Spectre.Console;
 using SteamKit2;
 using SteamKit2.CDN;
 using SteamKit2.Internal;
@@ -22,7 +23,8 @@ namespace wsteam.Core.Downloads;
 public enum SteamOperatingSystem
 {
     Windows,
-    Linux
+    Linux,
+    MacOs
 }
 
 public class DownloadManager(
@@ -46,6 +48,12 @@ public class DownloadManager(
 
     private int cdnServerCounter = 0;
 
+    private const int MaxServerFailures = 2;
+    private readonly ConcurrentDictionary<Server, int> serverFailures = new();
+
+    private bool IsServerFailed(Server server)
+        => serverFailures.TryGetValue(server, out var failures) && failures >= MaxServerFailures;
+
     private Server PickCdnServer(Server[] servers, int retryCount)
     {
         if (servers.Length == 0)
@@ -53,6 +61,14 @@ public class DownloadManager(
 
         var n = Interlocked.Increment(ref cdnServerCounter);
         var baseIndex = (int)((uint)n % (uint)servers.Length);
+
+        for (int i = 0; i < servers.Length; i++)
+        {
+            var server = servers[(baseIndex + i) % servers.Length];
+            if (!IsServerFailed(server))
+                return server;
+        }
+
         return servers[(baseIndex + retryCount) % servers.Length];
     }
 
@@ -60,25 +76,27 @@ public class DownloadManager(
     private readonly SteamPicsClient picsClient = picsClient;
     private readonly DepotKeyProvider depotKeyProvider = depotKeyProvider;
 
-    public readonly System.Timers.Timer SpeedTimer = new();
-
     private SteamApp? currentApp;
 
-    private ulong totalAccumulator = 0;
-    private ulong byteAccumulator = 0;
+    private long invalidChunkCount = 0;
     private ulong appSize = 0;
 
+    // chunk retry settings
     private const int MaxRetries = 3;
     private const int RetryDelayMs = 1000;
 
-    private ulong _lastTotal = 0;
-    private double _smoothedBytesPerSec = 0;
-    private const double Alpha = 0.2;
-
-    static readonly int[] Redistributables = [
+    static readonly uint[] Redistributables = [
         228983, // VC 2010 Redist
         228990  // DirectX Jun 2010 Redist
     ];
+
+    private sealed class DepotProgress
+    {
+        public required uint DepotId;
+        public required ulong TotalBytes;
+        public long DownloadedBytes;
+        public ProgressTask? Task;
+    }
 
     internal class ManifestWrapper
     {
@@ -92,37 +110,6 @@ public class DownloadManager(
 
     private void ReturnBuffer(byte[] buffer)
         => ArrayPool<byte>.Shared.Return(buffer);
-
-    public SteamApp? GetCurrentApp() =>
-        currentApp;
-
-    public ulong GetDownloadPercentage()
-    {
-        if (appSize is 0) return 0;
-        var percentage = (double)totalAccumulator / appSize * 100;
-        return (ulong)percentage;
-    }
-
-    public string GetEstimatedRemainingTime()
-    {
-        var currentTotal = Interlocked.Read(ref totalAccumulator);
-        var delta = currentTotal - _lastTotal;
-        _lastTotal = currentTotal;
-
-        _smoothedBytesPerSec = Alpha * delta + (1 - Alpha) * _smoothedBytesPerSec;
-
-        var remaining = appSize - currentTotal;
-        return _smoothedBytesPerSec > 0
-            ? TimeSpan.FromSeconds(remaining / _smoothedBytesPerSec).ToString(@"hh\:mm\:ss")
-            : "?";
-    }
-
-    public string GetDownloadSpeed()
-    {
-        var elapsedSeconds = SpeedTimer.Interval / 1000.0;
-        var speedMbps = byteAccumulator / 1024.0 / 1024.0 / elapsedSeconds;
-        return $"{speedMbps:F2} MB/s";
-    }
 
     public async Task DownloadPubFileAsync(uint appId, PublishedFileID pubId, string steamDirectory = "")
     {
@@ -205,7 +192,7 @@ public class DownloadManager(
             Console.WriteLine($"[workshop] got depot key {keyResponse.DepotKey} for workshop depot {app.Depots.WorkshopDepot}");
 
             var requestCode = await steamSession.SteamContent.GetManifestRequestCode((uint)app.Depots.WorkshopDepot, appId, fileId);
-            if (requestCode == 0)
+            if (requestCode is 0)
             {
                 Console.WriteLine($"[workshop] failed to get manifest request code for content file {fileId}");
                 continue;
@@ -231,25 +218,36 @@ public class DownloadManager(
 
             appSize = manifest.TotalUncompressedSize;
 
-            SpeedTimer.Interval = 1000;
-            SpeedTimer.Elapsed += (sender, e) =>
-            {
-                var progressPercent = GetDownloadPercentage();
-                var speedMbps = GetDownloadSpeed();
-                var eta = GetEstimatedRemainingTime();
-
-                Console.WriteLine($"[dl] {progressPercent:F1}% | {speedMbps} | {eta}");
-                byteAccumulator = 0;
-            };
-            SpeedTimer.Start();
-
             var sw = Stopwatch.StartNew();
-            Console.WriteLine($"[downloader] downloading workshop item from cellid {cdnServers[0].CellID}");
-            await DownloadManifestsAsync([manifestWrapper], workshopItemDirectory, appId, cdnClient, cdnServers);
 
-            Console.WriteLine($"[downloader] download finished in {sw.Elapsed.ToString(@"hh\:mm\:ss\.ff")}!");
+            await AnsiConsole.Progress()
+                .AutoClear(false)
+                .Columns(
+                    new TaskDescriptionColumn(),
+                    new ProgressBarColumn(),
+                    new PercentageColumn(),
+                    new DownloadedColumn(),
+                    new TransferSpeedColumn(),
+                    new RemainingTimeColumn())
+                .StartAsync(async progressCtx =>
+                {
+                    var task = progressCtx.AddTask(
+                        $"[green]{downloadedTitle ?? pubId.ToString()}[/]",
+                        maxValue: manifest.TotalUncompressedSize);
 
-            SpeedTimer.Dispose();
+                    var dp = new DepotProgress
+                    {
+                        DepotId = manifestWrapper.DepotId,
+                        TotalBytes = manifest.TotalUncompressedSize,
+                        Task = task
+                    };
+
+                    await DownloadManifestsAsync(
+                        [manifestWrapper], workshopItemDirectory, appId,
+                        cdnClient, cdnServers, [dp], task);
+                });
+
+            AnsiConsole.MarkupLine($"[green]✓[/] finished in {sw.Elapsed.ToString(@"hh\:mm\:ss\.ff")}");
             currentApp = null;
         }
 
@@ -280,129 +278,196 @@ public class DownloadManager(
         Console.WriteLine($"[workshop] finished downloading \"{downloadedTitle ?? pubId.ToString()}\" ({pubId}) to {Path.Combine(steamWorkshopDirectory, pubId.ToString())}");
     }
 
-    public async Task DownloadAppAsync(uint appId, string path, SteamOperatingSystem os, IManifestApi manifestApi, uint[]? excludedDepots = null)
+    public async Task DownloadAppAsync(uint appId, string path, SteamOperatingSystem[] os, IManifestApi manifestApi, uint[]? excludedDepots = null)
     {
-        await steamSession.WaitLoggedOnAsync();
+        SteamApp game = null!;
+        Server[] cdnServers = null!;
+        Client cdnClient = null!;
 
-        var game = await picsClient.GetAppInfoAsync(appId);
-        currentApp = game;
+        await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .StartAsync("Logging into Steam...", async ctx =>
+            {
+                await steamSession.WaitLoggedOnAsync();
 
-        Console.WriteLine($"[downloader] found app {game.AppId}");
+                ctx.Status($"Finding app {appId}...");
+                game = await picsClient.GetAppInfoAsync(appId);
+                currentApp = game;
 
-        var depots = game.Depots.Depots.ToList()
-            .Where(d => !Redistributables.Contains(int.Parse(d.Key)))
-            .Where(d => (d.Value?.Config?.OsList ?? "").Contains(os.ToString(), StringComparison.OrdinalIgnoreCase))
+                ctx.Status("Connecting to Steam CDN...");
+                cdnServers = [.. await steamSession.SteamContent.GetServersForSteamPipe()];
+                cdnClient = new Client(steamSession.SteamClient);
+            });
+
+        var depots = game.Depots.Depots
+            .Where(d => uint.TryParse(d.Key, out var depotId) && !Redistributables.Contains(depotId))
+            .Where(d => d.Value?.Manifests is not null)
+            .Where(d => os.Any((o) => (d.Value?.Config?.OsList ?? "").Contains(o.ToString(), StringComparison.OrdinalIgnoreCase)))
             .Where(d => (d.Value?.Config?.Language ?? "english") == "english")
             .Where(d => excludedDepots is null || !excludedDepots.Contains(uint.Parse(d.Key)))
             .ToList();
 
-        depots.ForEach(d => Console.WriteLine($"[{d.Key}] dlc:{d.Value.DlcAppId?.ToString() ?? "null"} os:{d.Value.Config?.OsList}"));
+        var selectedDepotKeys = AnsiConsole.Prompt(
+            new MultiSelectionPrompt<string>()
+                .Title("Select depots to download:")
+                .InstructionsText("[grey](Press [blue]<space>[/] to toggle, [green]<enter>[/] to start download)[/]")
+                .AddChoices(depots.Select(d => $"Depot {d.Key} - {d.Value?.Config?.OsList ?? "unknown"}").ToList()));
 
-        Console.WriteLine($"[downloader] downloading game {game.Config.InstallDir}");
-        Console.WriteLine($"[downloader] found {depots.Count} depots");
+        var selectedDepots = depots.Where(d =>
+            selectedDepotKeys.Contains($"Depot {d.Key} - {d.Value?.Config?.OsList ?? "unknown"}")
+        ).ToList();
+
+        var selectedDepotIds = selectedDepots.Select(d => d.Key).ToList();
 
         var gameDirectory = Path.Combine(path, game.Config.InstallDir);
         Directory.CreateDirectory(gameDirectory);
 
-        var cdnServers = (await steamSession.SteamContent.GetServersForSteamPipe()).ToArray();
-        using var cdnClient = new Client(steamSession.SteamClient);
+        var manifestResults = new ConcurrentDictionary<uint, ManifestWrapper?>();
+        var depotSizes = new ConcurrentDictionary<uint, ulong>();
 
-        Console.WriteLine($"[downloader] using cellid {cdnServers.First().CellID} (+{cdnServers.Count()} cells)");
+        await AnsiConsole.Live(BuildManifestTable(selectedDepotIds, manifestResults, depotSizes))
+                .StartAsync(async ctx =>
+                {
+                    var manifestTasks = selectedDepots.Select(async depot =>
+                {
+                    var depotId = uint.Parse(depot.Key);
+                    AnsiConsole.MarkupLine($"[blue]Downloading manifest for depot {depotId}...[/]");
 
-        ulong totalSize = 0;
+                    try
+                    {
+                        if (depot.Value.Manifests is null) throw new Exception("no manifests");
 
-        var manifestDownloadTasks = depots.Select(async depot =>
+                        var publicManifest = (depot.Value.Manifests.TryGetValue("public", out var p) ? p : null)
+                            ?? throw new Exception("no public manifest");
+
+                        var manifestId = ulong.Parse(publicManifest.Gid);
+                        var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId)
+                            ?? throw new Exception("download failed");
+
+                        var depotKey = await depotKeyProvider.GetDepotKeyAsync(appId, depotId)
+                            ?? throw new Exception("no key");
+
+                        if (!manifest.DecryptFilenames(depotKey)) throw new Exception("decrypt failed");
+
+                        manifestResults[depotId] = new ManifestWrapper
+                        {
+                            DepotId = depotId,
+                            Manifest = manifest,
+                            DepotKey = depotKey,
+                        };
+                        depotSizes[depotId] = manifest.TotalUncompressedSize;
+                    }
+                    catch
+                    {
+                        AnsiConsole.MarkupLine($"[red]Failed to download manifest for depot {depotId}[/]");
+                        manifestResults[depotId] = null;
+                    }
+
+                    ctx.UpdateTarget(BuildManifestTable(selectedDepotIds, manifestResults, depotSizes));
+                });
+
+                    await Task.WhenAll(manifestTasks);
+                });
+
+        var manifestFiles = manifestResults.Values.Where(m => m is not null).Cast<ManifestWrapper>().ToList();
+
+        if (manifestFiles.Count is 0)
         {
-            if (depot.Value.Manifests is null) return null;
-
-            var publicManifest = depot.Value.Manifests.TryGetValue("public", out var pManifest) ? pManifest : null;
-            if (publicManifest is null)
-            {
-                Console.WriteLine($"[manifest] no public manifest for depot {depot.Key}! cannot download depot");
-                return null;
-            }
-
-            var depotId = uint.Parse(depot.Key);
-            var manifestId = ulong.Parse(publicManifest.Gid);
-
-            var manifest = await manifestApi.GetManifestAsync(appId, depotId, manifestId);
-            if (manifest is null)
-            {
-                Console.WriteLine($"[manifest] failed to download manifest for depot {depot.Key}! cannot download depot");
-                return null;
-            }
-
-            var depotKey = await depotKeyProvider.GetDepotKeyAsync(appId, depotId);
-            if (depotKey is null)
-            {
-                Console.WriteLine($"[manifest] no depot key for depot {depot.Key}! cannot decrypt");
-                return null;
-            }
-
-            var wrappedManifest = new ManifestWrapper
-            {
-                DepotId = depotId,
-                Manifest = manifest,
-                DepotKey = depotKey,
-            };
-
-            var result = manifest.DecryptFilenames(depotKey);
-            if (!result)
-            {
-                Console.WriteLine($"[manifest] failed to decrypt filenames for depot {depot.Key}");
-                return null;
-            }
-
-            Console.WriteLine($"[manifest] depotkey={wrappedManifest.DepotKey?.Length.ToString() ?? "null"}, isEncrypted={manifest.FilenamesEncrypted}");
-            Console.WriteLine($"[manifest] successfully downloaded manifest for depot {manifest.DepotID}");
-            totalSize += manifest.TotalUncompressedSize;
-
-            return wrappedManifest;
-        });
-
-        var drive = new DriveInfo(Path.GetPathRoot(path)!);
-        if (drive.AvailableFreeSpace < (long)totalSize)
-        {
-            Console.WriteLine($"[downloader] not enough space on drive {drive.Name} (available={drive.AvailableFreeSpace}, required={totalSize})");
+            AnsiConsole.MarkupLine("[red]No manifests could be found.[/]");
             return;
         }
 
-        var manifestFileResults = await Task.WhenAll(manifestDownloadTasks);
-        var manifestFiles = manifestFileResults
-            .Where(m => m != null)
-            .Cast<ManifestWrapper>()
-            .ToList();
-
         appSize = (ulong)manifestFiles.Sum(m => (long)m.Manifest.TotalUncompressedSize);
 
-        var manifestCount = manifestFiles.Count;
-        if (manifestCount > 0)
+        var drive = new DriveInfo(Path.GetPathRoot(path)!);
+        if (drive.AvailableFreeSpace < (long)appSize)
         {
-            SpeedTimer.Interval = 1000;
-            SpeedTimer.Elapsed += (sender, e) =>
-            {
-                var progressPercent = GetDownloadPercentage();
-                var speedMbps = GetDownloadSpeed();
-                var eta = GetEstimatedRemainingTime();
-
-                Console.WriteLine($"[dl] {progressPercent:F1}% | {speedMbps} | {eta}");
-                byteAccumulator = 0;
-            };
-            SpeedTimer.Start();
-
-            var sw = Stopwatch.StartNew();
-            Console.WriteLine($"[downloader] downloading {manifestCount} manifests from cellid {cdnServers[0].CellID}");
-            await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServers);
-
-            Console.WriteLine($"[downloader] downloaded {manifestCount} depot(s)");
-            Console.WriteLine($"[downloader] download finished in {sw.Elapsed.ToString(@"hh\:mm\:ss\.ff")}!");
+            AnsiConsole.MarkupLine("[red]Not enough disk space.[/]");
+            return;
         }
 
-        SpeedTimer.Dispose();
+        var depotProgressList = manifestFiles.Select(m => new DepotProgress
+        {
+            DepotId = m.DepotId,
+            TotalBytes = m.Manifest.TotalUncompressedSize
+        }).ToList();
+
+        var sw = Stopwatch.StartNew();
+
+        await AnsiConsole.Progress()
+            .AutoClear(false)
+            .HideCompleted(false)
+            .Columns(
+                new TaskDescriptionColumn(),
+                new ProgressBarColumn(),
+                new PercentageColumn(),
+                new DownloadedColumn(),
+                new TransferSpeedColumn(),
+                new RemainingTimeColumn())
+            .StartAsync(async progressCtx =>
+            {
+                var overallTask = progressCtx.AddTask("[bold]Overall[/]", maxValue: appSize);
+
+                foreach (var dp in depotProgressList)
+                    dp.Task = progressCtx.AddTask($"Depot {dp.DepotId}", maxValue: dp.TotalBytes);
+
+                await DownloadManifestsAsync(manifestFiles, gameDirectory, appId, cdnClient, cdnServers, depotProgressList, overallTask);
+            });
+
+        sw.Stop();
+        cdnClient.Dispose();
         currentApp = null;
+
+        var avgSpeed = appSize / 1024.0 / 1024.0 / sw.Elapsed.TotalSeconds;
+
+        var summary = new Table()
+            .Border(TableBorder.Rounded)
+            .Title("[green]✓ Download Complete[/]")
+            .AddColumn("").AddColumn("");
+
+        summary.AddRow("Application", game.Config.InstallDir);
+        summary.AddRow("Depots", manifestFiles.Count.ToString());
+        summary.AddRow("Downloaded", ByteSizeFormatter.FormatBytes(appSize));
+        summary.AddRow("Time", sw.Elapsed.ToString(@"hh\:mm\:ss"));
+        summary.AddRow("Average", $"{avgSpeed:F1} MB/s");
+        summary.AddRow("Installed", gameDirectory);
+
+        AnsiConsole.Write(summary);
     }
 
-    private async Task DownloadManifestsAsync(IEnumerable<ManifestWrapper> manifestFiles, string gameDirectory, uint appId, Client cdnClient, Server[] cdnServers)
+    private static Table BuildManifestTable(
+        List<string> depotIds,
+        ConcurrentDictionary<uint, ManifestWrapper?> results,
+        ConcurrentDictionary<uint, ulong> sizes)
+    {
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .Title("[bold]Manifests[/]")
+            .AddColumn("Depot").AddColumn("Status").AddColumn("Size");
+
+        foreach (var key in depotIds)
+        {
+            var depotId = uint.Parse(key);
+
+            if (!results.TryGetValue(depotId, out var result))
+                table.AddRow(key, "[yellow]⠋ Loading...[/]", "—");
+            else if (result is not null)
+                table.AddRow(key, "[green]✓ Ready[/]", ByteSizeFormatter.FormatBytes(sizes[depotId]));
+            else
+                table.AddRow(key, "[red]✗ Failed[/]", "—");
+        }
+
+        return table;
+    }
+
+    private async Task DownloadManifestsAsync(
+        IEnumerable<ManifestWrapper> manifestFiles,
+        string gameDirectory,
+        uint appId,
+        Client cdnClient,
+        Server[] cdnServers,
+        List<DepotProgress>? depotProgressList = null,
+        ProgressTask? overallTask = null)
     {
         foreach (var manifestInfo in manifestFiles)
         {
@@ -465,20 +530,24 @@ public class DownloadManager(
                 var dop = GetChunkParallelism();
                 Console.WriteLine($"[downloader] chunk parallelism={dop} (override via {ChunkParallelismEnv})");
 
+                var depotProgress = depotProgressList?.FirstOrDefault(dp => dp.DepotId == manifestInfo.DepotId);
+
                 await Parallel.ForEachAsync(
                     chunkJobs,
                     new ParallelOptions { MaxDegreeOfParallelism = dop },
                     async (job, ct) =>
                     {
                         await DownloadChunkAsync(
-                            job.chunk,
-                            manifestInfo.DepotId,
-                            manifestInfo.DepotKey,
-                            job.file,
-                            cdnClient,
-                            cdnServers
-                        );
+                            job.chunk, manifestInfo.DepotId, manifestInfo.DepotKey,
+                            job.file, cdnClient, cdnServers,
+                            depotProgress, overallTask);
                     });
+
+                if (depotProgress?.Task is not null)
+                {
+                    depotProgress.Task.Description = $"[green]Depot {depotProgress.DepotId} ✓[/]";
+                    depotProgress.Task.StopTask();
+                }
             }
             finally
             {
@@ -495,6 +564,8 @@ public class DownloadManager(
         ChunkedFile file,
         Client cdnClient,
         Server[] cdnServers,
+        DepotProgress? depotProgress = null,
+        ProgressTask? overallTask = null,
         int retryCount = 0)
     {
         bool isValid = false;
@@ -512,8 +583,12 @@ public class DownloadManager(
                 {
                     var computed = Adler32.Calculate(0, verifyBuffer.AsSpan(0, uncompressedLength));
                     isValid = computed == chunk.Checksum;
+
                     if (!isValid)
-                        Console.WriteLine($"[verify] Chunk INVALID for {file.fileName} offset {chunk.Offset} expected {chunk.Checksum} got {computed}");
+                    {
+                        var n = Interlocked.Increment(ref invalidChunkCount);
+                        overallTask?.Description = $"[bold]Overall[/]  [yellow]{n} chunks re-queued[/]";
+                    }
                 }
                 else
                 {
@@ -533,8 +608,8 @@ public class DownloadManager(
 
         if (isValid)
         {
-            Interlocked.Add(ref byteAccumulator, chunk.UncompressedLength);
-            Interlocked.Add(ref totalAccumulator, chunk.UncompressedLength);
+            depotProgress?.Task?.Increment(chunk.UncompressedLength);
+            overallTask?.Increment(chunk.UncompressedLength);
             return;
         }
 
@@ -549,8 +624,9 @@ public class DownloadManager(
                 await cdnClient.DownloadDepotChunkAsync(depotId, chunk, cdnServer, buffer, depotKey);
                 await file.WriteChunkAsync(chunk, buffer.AsMemory(0, (int)chunk.UncompressedLength));
 
-                Interlocked.Add(ref byteAccumulator, chunk.UncompressedLength);
-                Interlocked.Add(ref totalAccumulator, chunk.UncompressedLength);
+                serverFailures.TryRemove(cdnServer, out _);
+                depotProgress?.Task?.Increment(chunk.UncompressedLength);
+                overallTask?.Increment(chunk.UncompressedLength);
             }
             finally
             {
@@ -559,16 +635,20 @@ public class DownloadManager(
         }
         catch (Exception ex)
         {
+            var failures = serverFailures.AddOrUpdate(cdnServer, 1, (_, count) => count + 1);
+            var failed = IsServerFailed(cdnServer)
+                ? " (server marked as failed)"
+                : "";
+            Console.WriteLine($"[depot {depotId}] error downloading chunk from {cdnServer.Host}: {ex.Message}{failed}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries}, server failures={failures})");
+
             if (retryCount >= MaxRetries)
             {
                 Console.WriteLine($"[depot {depotId}] error downloading chunk after {MaxRetries} retries: {ex}");
                 throw;
             }
 
-            Console.WriteLine($"[depot {depotId}] error downloading chunk: {ex.Message}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries})");
-
             await Task.Delay(RetryDelayMs);
-            await DownloadChunkAsync(chunk, depotId, depotKey, file, cdnClient, cdnServers, retryCount + 1);
+            await DownloadChunkAsync(chunk, depotId, depotKey, file, cdnClient, cdnServers, depotProgress, overallTask, retryCount + 1);
         }
     }
 }

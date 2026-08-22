@@ -64,10 +64,23 @@ class Program
             }
         });
 
-        Option<SteamOperatingSystem> osOption = new("--os")
+        Option<SteamOperatingSystem[]> osOption = new("--os")
         {
             Description = "The operation system to filter",
-            DefaultValueFactory = (_) => SteamOperatingSystem.Windows
+            AllowMultipleArgumentsPerToken = true,
+            DefaultValueFactory = (_) =>
+            {
+                if (OperatingSystem.IsWindows())
+                    return [SteamOperatingSystem.Windows];
+
+                if (OperatingSystem.IsLinux())
+                    return [SteamOperatingSystem.Linux, SteamOperatingSystem.Windows];
+
+                if (OperatingSystem.IsMacOS())
+                    return [SteamOperatingSystem.MacOs, SteamOperatingSystem.Windows];
+
+                return [];
+            }
         };
 
         Option<uint[]> depotsOption = new("--depots")
@@ -159,9 +172,6 @@ class Program
                 var apiKeyHolder = provider.GetRequiredService<ApiKeyHolder>();
                 apiKeyHolder.AddApiKey(source, userProvidedKey);
 
-                Console.WriteLine(source);
-                Console.WriteLine(userProvidedKey);
-
                 switch (source)
                 {
                     case ManifestSource.Hubcap:
@@ -211,10 +221,7 @@ class Program
             ];
 
             foreach (var path in paths)
-            {
-                if (Directory.Exists(path))
-                    return path;
-            }
+                if (Directory.Exists(path)) return path;
 
             return null;
         }
