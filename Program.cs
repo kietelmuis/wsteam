@@ -95,10 +95,11 @@ class Program
             {
                 Description = "The app ID."
             },
-            new Argument<PublishedFileID>("pubId")
+            new Argument<ulong[]>("pubIds")
             {
-                Description = "The published file ID."
-            }
+                Description = "The published file IDs.",
+                Arity = ArgumentArity.OneOrMore
+            },
         };
         rootCommand.Subcommands.Add(downloadPubFileCommand);
 
@@ -142,13 +143,16 @@ class Program
             steamSession.Connect(false);
 
             var appId = parseResult.GetValue<uint>("appId");
-            var pubId = parseResult.GetValue<ulong>("pubId");
+            var pubId = parseResult.GetValue<ulong[]>("pubIds");
 
             var steamDirectory = GetSteamDirectory()
                 ?? throw new InvalidOperationException("Steam directory not found.");
 
             var downloadManager = provider.GetRequiredService<DownloadManager>();
-            await downloadManager.DownloadPubFileAsync(appId, new PublishedFileID(pubId), steamDirectory);
+            foreach (var id in pubId)
+            {
+                await downloadManager.DownloadPubFileAsync(appId, new PublishedFileID(id), steamDirectory);
+            }
         });
 
         installCommand.SetAction(async parseResult =>

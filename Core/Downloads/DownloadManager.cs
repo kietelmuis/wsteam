@@ -127,7 +127,10 @@ public class DownloadManager(
 
         var details = await steamSession.PublishedFile.GetDetails(pubFileRequest);
         if (details.Result is not EResult.OK)
-            throw new InvalidOperationException("Failed to get UGC details");
+        {
+            AnsiConsole.MarkupLine($"[red]workshop[/] failed to get details for {pubId}: {details.Result}");
+            return;
+        }
 
         string? downloadedTitle = null;
         List<ulong> contentFileIds = [];
@@ -137,7 +140,7 @@ public class DownloadManager(
         {
             if (file is null) continue;
 
-            Console.WriteLine($"[workshop] found file {file.title} ({file.publishedfileid}) of type {(EWorkshopFileType)file.file_type}");
+            AnsiConsole.MarkupLine($"[blue]workshop[/] found file {Markup.Escape(file.title)} (pubId {file.publishedfileid})");
             switch ((EWorkshopFileType)file.file_type)
             {
                 case EWorkshopFileType.Collection:
@@ -154,7 +157,6 @@ public class DownloadManager(
                     else if (file.hcontent_file > 0)
                     {
                         downloadedTitle = file.title;
-                        Console.WriteLine($"[workshop] {file.title} has content file id {file.hcontent_file}");
                         contentFileIds.Add(file.hcontent_file);
                     }
                     break;
@@ -164,8 +166,6 @@ public class DownloadManager(
         var steamWorkshopDirectory = Path.Combine(steamDirectory, "steamapps", "workshop", "content", appId.ToString());
         Directory.CreateDirectory(steamWorkshopDirectory);
 
-        Console.WriteLine($"[workshop] {fileUrls.Count()} files to download from URLs and {contentFileIds.Count()} files to download from content servers");
-
         foreach (var fileId in contentFileIds)
         {
             var workshopItemDirectory = Path.Combine(steamWorkshopDirectory, pubId.ToString());
@@ -174,30 +174,28 @@ public class DownloadManager(
             var app = await picsClient.GetAppInfoAsync(appId);
             currentApp = app;
 
-            Console.WriteLine($"[downloader] found app {app.AppId}");
+            AnsiConsole.MarkupLine($"[cyan]downloader[/] found app {app.AppId}");
 
             if (app.Depots.WorkshopDepot is null && app.Depots.WorkshopDepot != 0)
             {
-                Console.WriteLine($"[workshop] no workshop depot found! cannot download content file {fileId}");
+                AnsiConsole.MarkupLine($"[yellow]workshop[/] no workshop depot found! cannot download content file {fileId}");
                 continue;
             }
-            Console.WriteLine($"[workshop] found workshop depot {app.Depots.WorkshopDepot}");
+            AnsiConsole.MarkupLine($"[blue]workshop[/] found workshop depot {app.Depots.WorkshopDepot}");
 
             var keyResponse = await steamSession.SteamApps.GetDepotDecryptionKey((uint)app.Depots.WorkshopDepot, appId);
             if (keyResponse.Result is not EResult.OK)
             {
-                Console.WriteLine($"[workshop] failed to get depot key for workshop depot {app.Depots.WorkshopDepot}: {keyResponse.Result}");
+                AnsiConsole.MarkupLine($"[red]workshop[/] failed to get depot key for workshop depot {app.Depots.WorkshopDepot}: {keyResponse.Result}");
                 continue;
             }
-            Console.WriteLine($"[workshop] got depot key {keyResponse.DepotKey} for workshop depot {app.Depots.WorkshopDepot}");
 
             var requestCode = await steamSession.SteamContent.GetManifestRequestCode((uint)app.Depots.WorkshopDepot, appId, fileId);
             if (requestCode is 0)
             {
-                Console.WriteLine($"[workshop] failed to get manifest request code for content file {fileId}");
+                AnsiConsole.MarkupLine($"[red]workshop[/] failed to get manifest request code for content file {fileId}");
                 continue;
             }
-            Console.WriteLine($"[workshop] got manifest request code {requestCode} for content file {fileId}");
 
             var manifest = await cdnClient.DownloadManifestAsync(
                 keyResponse.DepotID,
@@ -259,12 +257,12 @@ public class DownloadManager(
             using var client = new HttpClient();
 
             var filePath = Path.Combine(workshopItemDirectory, file.Item1);
-            Console.WriteLine($"[workshop] downloading {file.Item1} to {filePath}");
+            AnsiConsole.MarkupLine($"[blue]workshop[/] downloading {Markup.Escape(file.Item1)} to {Markup.Escape(filePath)}");
 
             var response = await client.GetAsync(file.Item2);
             if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"[workshop] failed to download {file.Item1} from {file.Item2}: {response.StatusCode}");
+                AnsiConsole.MarkupLine($"[red]workshop[/] failed to download {Markup.Escape(file.Item1)} from {Markup.Escape(file.Item2)}: {response.StatusCode}");
                 continue;
             }
 
@@ -275,7 +273,7 @@ public class DownloadManager(
             fs.Close();
         }
 
-        Console.WriteLine($"[workshop] finished downloading \"{downloadedTitle ?? pubId.ToString()}\" ({pubId}) to {Path.Combine(steamWorkshopDirectory, pubId.ToString())}");
+        AnsiConsole.MarkupLine($"[blue]workshop[/] finished downloading \"{Markup.Escape(downloadedTitle ?? pubId.ToString())}\" ({pubId}) to {Markup.Escape(Path.Combine(steamWorkshopDirectory, pubId.ToString()))}");
     }
 
     public async Task DownloadAppAsync(uint appId, string path, SteamOperatingSystem[] os, IManifestApi manifestApi, uint[]? excludedDepots = null)
@@ -299,13 +297,25 @@ public class DownloadManager(
                 cdnClient = new Client(steamSession.SteamClient);
             });
 
+        AnsiConsole.MarkupLine($"[green]✓[/] Found {game.Depots.Depots.Count} depots for app {appId}");
+
         var depots = game.Depots.Depots
             .Where(d => uint.TryParse(d.Key, out var depotId) && !Redistributables.Contains(depotId))
             .Where(d => d.Value?.Manifests is not null)
-            .Where(d => os.Any((o) => (d.Value?.Config?.OsList ?? "").Contains(o.ToString(), StringComparison.OrdinalIgnoreCase)))
+            .Where(d =>
+            {
+                var osList = d.Value?.Config?.OsList;
+                return string.IsNullOrEmpty(osList) || os.Any(o => osList.Contains(o.ToString(), StringComparison.OrdinalIgnoreCase));
+            })
             .Where(d => (d.Value?.Config?.Language ?? "english") == "english")
             .Where(d => excludedDepots is null || !excludedDepots.Contains(uint.Parse(d.Key)))
             .ToList();
+
+        if (depots.Count is 0)
+        {
+            AnsiConsole.MarkupLine("[red]No depots available for download.[/]");
+            return;
+        }
 
         var selectedDepotKeys = AnsiConsole.Prompt(
             new MultiSelectionPrompt<string>()
@@ -380,9 +390,12 @@ public class DownloadManager(
         appSize = (ulong)manifestFiles.Sum(m => (long)m.Manifest.TotalUncompressedSize);
 
         var drive = new DriveInfo(Path.GetPathRoot(path)!);
-        if (drive.AvailableFreeSpace < (long)appSize)
+        var existingSize = GetDirectorySize(gameDirectory);
+        var requiredSpace = Math.Max(0, (long)appSize - existingSize);
+
+        if (drive.AvailableFreeSpace < requiredSpace)
         {
-            AnsiConsole.MarkupLine("[red]Not enough disk space.[/]");
+            AnsiConsole.MarkupLine($"[red]Not enough disk space.[/] Need {ByteSizeFormatter.FormatBytes((ulong)requiredSpace)}, only {ByteSizeFormatter.FormatBytes((ulong)Math.Max(0, drive.AvailableFreeSpace))} free.");
             return;
         }
 
@@ -460,6 +473,19 @@ public class DownloadManager(
         return table;
     }
 
+    private static long GetDirectorySize(string path)
+    {
+        if (!Directory.Exists(path))
+            return 0;
+
+        long total = 0;
+        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        {
+            try { total += new FileInfo(file).Length; } catch { }
+        }
+        return total;
+    }
+
     private async Task DownloadManifestsAsync(
         IEnumerable<ManifestWrapper> manifestFiles,
         string gameDirectory,
@@ -476,11 +502,11 @@ public class DownloadManager(
 
             if (manifest.Files is null)
             {
-                Console.WriteLine($"[manifest] Files is null for depot {manifest.DepotID}");
+                AnsiConsole.MarkupLine($"[red]manifest[/] Files is null for depot {manifest.DepotID}");
                 continue;
             }
 
-            Console.WriteLine($"[manifest] depot {manifest.DepotID} has {manifest.Files.Count} total files, {manifest.Files.Count(f => f.Chunks.Any())} with chunks, filenamesEncrypted={manifest.FilenamesEncrypted}");
+            AnsiConsole.MarkupLine($"[grey]manifest[/] depot {manifest.DepotID} has {manifest.Files.Count} total files, {manifest.Files.Count(f => f.Chunks.Any())} with chunks, filenamesEncrypted={manifest.FilenamesEncrypted}");
 
             var allFiles = manifest.Files
                 .Where(f => f.Chunks.Any())
@@ -521,14 +547,14 @@ public class DownloadManager(
                     chunkJobs.Add((file, chunk));
             }
 
-            Console.WriteLine(
-                $"[app {appId}] downloading {depotName} of {ByteSizeFormatter.FormatBytes(manifest.TotalUncompressedSize)}"
+            AnsiConsole.MarkupLine(
+                $"[cyan]app[/] {appId} downloading {depotName} of {ByteSizeFormatter.FormatBytes(manifest.TotalUncompressedSize)}"
             );
 
             try
             {
                 var dop = GetChunkParallelism();
-                Console.WriteLine($"[downloader] chunk parallelism={dop} (override via {ChunkParallelismEnv})");
+                AnsiConsole.MarkupLine($"[grey]downloader[/] chunk parallelism={dop} (override via {ChunkParallelismEnv})");
 
                 var depotProgress = depotProgressList?.FirstOrDefault(dp => dp.DepotId == manifestInfo.DepotId);
 
@@ -592,12 +618,12 @@ public class DownloadManager(
                 }
                 else
                 {
-                    Console.WriteLine($"[verify] Could not read full chunk for {file.fileName} offset {chunk.Offset}");
+                    AnsiConsole.MarkupLine($"[yellow]verify[/] Could not read full chunk for {Markup.Escape(file.fileName)} offset {chunk.Offset}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[verify] Exception while verifying chunk: {ex}");
+                AnsiConsole.MarkupLine($"[red]verify[/] Exception while verifying chunk: {ex}");
                 isValid = false;
             }
             finally
@@ -639,11 +665,11 @@ public class DownloadManager(
             var failed = IsServerFailed(cdnServer)
                 ? " (server marked as failed)"
                 : "";
-            Console.WriteLine($"[depot {depotId}] error downloading chunk from {cdnServer.Host}: {ex.Message}{failed}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries}, server failures={failures})");
+            AnsiConsole.MarkupLine($"[yellow]depot[/] {depotId} error downloading chunk from {cdnServer.Host}: {Markup.Escape(ex.Message)}{failed}, retrying in {RetryDelayMs}ms (attempt {retryCount + 1}/{MaxRetries}, server failures={failures})");
 
             if (retryCount >= MaxRetries)
             {
-                Console.WriteLine($"[depot {depotId}] error downloading chunk after {MaxRetries} retries: {ex}");
+                AnsiConsole.MarkupLine($"[red]depot[/] {depotId} error downloading chunk after {MaxRetries} retries: {ex}");
                 throw;
             }
 
