@@ -1,100 +1,70 @@
 # wsteam
 
-CLI to install Steam games from manifests (ManifestHub/Hubcap).
-
-`wsteam` is a cross-platform CLI tool for **installing Steam games using manifests** (instead of the standard Steam download flow).
-It can search for a game by name, fetch the required manifests, download the depots, and place the game into your Steam library folder.
+Cross-platform CLI that installs Steam games from depot manifests and downloads
+Workshop items (including collections) into your Steam library — instead of using
+the standard Steam download flow.
 
 ## Features
 
-- Install games via manifests from:
-  - **ManifestHub** (default)
-  - **Hubcap**
-- Search Steam apps by a query string (e.g. `"STEINS;GATE"`)
-- Choose install location (defaults to your Steam `steamapps/common`)
-- Filter by target OS (`--os`)
-- Exclude specific depots from downloading (`--depots`)
+- Manifest-driven installs with built-in source adapters (`manifesthub` default, `hubcap`)
+- Search apps by query, filter by OS (`--os`), exclude depots (`--depots`), choose install location
+- Workshop downloads: `wsteam workshop <appId> <pubFileId>`, collections expanded recursively
+- Resume support: existing chunks are verified (Adler32), only missing/invalid ones re-download
+- Parallel chunk pipeline: ~70 MB/s on gigabit vs 2–3 MB/s single-threaded (~25×)
+- `ArrayPool<byte>` rented buffers keep GC pressure flat; CDN rotation with per-server failure tracking
+- Live progress UI with speed and ETA
 
 ## Requirements
 
-- .NET (project targets `net10.0`)
-- A valid API key for your selected manifest source
+- .NET (`net10.0`), a manifest source API key, and a Steam session for session-dependent flows (Workshop)
 
 ## Installation
 
-### Build from source
-
 ```bash
-dotnet build
-```
-
-### Publish (single-file, self-contained)
-
-```bash
-dotnet publish -c Release
-```
-
-### Arch Linux
-
-This repo includes a `PKGBUILD` you can use to build a package locally:
-
-```bash
-makepkg -si
+dotnet build                # build
+dotnet publish -c Release   # single-file, self-contained
+makepkg -si                 # Arch Linux (PKGBUILD included)
 ```
 
 ## Usage
 
-### Install a game
-
 ```bash
-wsteam install --source manifesthub --key <API_KEY> "STEINS;GATE"
+wsteam install --key <API_KEY> "STEINS;GATE"                 # search & install
+wsteam install --source hubcap --key <API_KEY> "Game Name"   # pick manifest source
+wsteam install --key <API_KEY> --os Windows "Game Name"      # filter OS
+wsteam install --key <API_KEY> --depots 123456 234567 "Game" # skip depots
+wsteam install --key <API_KEY> --location /path/to/common "Game Name"
+wsteam workshop 4000 1234567890                              # workshop item/collection
 ```
 
-### Use a custom install location
+Workshop output lands in `<steam>/steamapps/workshop/content/<appId>/<pubFileId>/`.
 
-```bash
-wsteam install --key <API_KEY> --location "/path/to/SteamLibrary/steamapps/common" "Game Name"
-```
+## Environment
 
-### Select manifest source
+- `MANIFEST_API_KEY` / `HUBCAP_API_KEY`: manifest source keys (alternative to `--key`)
+- `PARALLELISM`: chunk download parallelism, 1–256 (default: cores + 4, clamped 4–32)
 
-```bash
-wsteam install --source hubcap --key <API_KEY> "Game Name"
-```
+## How it works
 
-### Filter OS
+1. Search app and depots via PICS, filter by OS, language, exclusions
+2. Fetch manifests from the selected source, decrypt filenames with the depot key
+3. Flatten manifest into chunk tasks, allocate files, verify existing chunks (Adler32)
+4. Download missing chunks in parallel from Steam CDN servers, decrypt, write at offset
+5. Report overall progress with speed and ETA
 
-```bash
-wsteam install --key <API_KEY> --os Windows "Game Name"
-```
+## Steam directory detection
 
-### Exclude specific depots
+- Linux: `~/.steam/steam`, `~/.var/app/com.valvesoftware.Steam/data/Steam`
+- Windows: registry `HKCU\Software\Valve\Steam` (`InstallPath`)
 
-`--depots` is an exclusion list: depots you pass here will be skipped.
+## Roadmap
 
-```bash
-wsteam install --key <API_KEY> --depots 123456 234567 "Game Name"
-```
+- Pluggable manifest endpoints (bring your own source)
+- Manifest caching
 
-## API keys
+## Legal
 
-You must supply an API key via `--key`.
-
-Notes:
-- **ManifestHub** keys are expected to be **64 characters**.
-- **Hubcap** keys are expected to start with **`smm`**.
-
-The tool also sets environment variables for convenience:
-- `MANIFEST_API_KEY` (ManifestHub)
-- `HUBCAP_API_KEY` (Hubcap)
-
-## How it finds your Steam directory
-
-- **Linux**: checks common Steam locations:
-  - `~/.steam/steam`
-  - `~/.var/app/com.valvesoftware.Steam/data/Steam`
-- **Windows**: reads `InstallPath` from the registry (`HKCU\Software\Valve\Steam`)
-
-## Disclaimer
-
-This project interacts with Steam content/manifests and third-party manifest sources. Use responsibly and only with content you are authorized to access.
+Intended for content **you own or are authorized to access**. Use only manifest sources
+and depot keys you are authorized to use, third-party archives may conflict with the
+Steam Subscriber Agreement.
+Not affiliated with or endorsed by Valve.
