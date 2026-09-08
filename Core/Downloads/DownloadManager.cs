@@ -33,7 +33,7 @@ public class DownloadManager(
     DepotKeyProvider depotKeyProvider
 )
 {
-    private const string ChunkParallelismEnv = "WSTEAM_CHUNK_PARALLELISM";
+    private const string ChunkParallelismEnv = "PARALLELISM";
 
     private static int GetChunkParallelism()
     {
