@@ -4,6 +4,19 @@ Cross-platform CLI that installs Steam games from depot manifests and downloads
 Workshop items (including collections) into your Steam library — instead of using
 the standard Steam download flow.
 
+<table>
+<tr>
+<td align="center"><h3>~25× faster</h3>~70 MB/s on gigabit<br><sub>vs. 2–3 MB/s single-threaded</sub></td>
+<td align="center"><h3>Low memory usage</h3>no allocation spikes<br><sub>ArrayPool&lt;byte&gt; rented buffers</sub></td>
+<td align="center"><h3>Smart resume</h3>only downloads missing chunks<br><sub>Adler32 hash verification</sub></td>
+</tr>
+<tr>
+<td align="center"><h3>Auto-retry</h3>switches slow/dead CDNs<br><sub>per-server failure tracking</sub></td>
+<td align="center"><h3>Full collections</h3>download nested Workshop items<br><sub>single CLI command</sub></td>
+<td align="center"><h3>Granular installs</h3>filter by OS &amp; exclude depots<br><sub>manifesthub &amp; hubcap support</sub></td>
+</tr>
+</table>
+
 ## Features
 
 - Manifest-driven installs with built-in source adapters (`manifesthub` default, `hubcap`)
