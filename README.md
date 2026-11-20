@@ -6,7 +6,7 @@ the standard Steam download flow.
 
 <table>
 <tr>
-<td align="center"><h3>~25× faster</h3>~70 MB/s on gigabit<br><sub>vs. 2–3 MB/s single-threaded</sub></td>
+<td align="center"><h3>~25× faster downloads</h3>~70 MB/s on gigabit<br><sub>vs. 2–3 MB/s single-threaded</sub></td>
 <td align="center"><h3>Low memory usage</h3>no allocation spikes<br><sub>ArrayPool&lt;byte&gt; rented buffers</sub></td>
 <td align="center"><h3>Smart resume</h3>only downloads missing chunks<br><sub>Adler32 hash verification</sub></td>
 </tr>
